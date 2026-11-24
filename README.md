@@ -85,3 +85,5 @@ tests/                  pruebas de lógica
 Proyecto personal. Sin dependencias de ejecución ni servicios externos obligatorios.
 
 La publicación se actualiza automáticamente cuando se incorporan mejoras a la rama `main`.
+
+<!-- Ajuste de publicación PWA Android v0.2.2 -->
