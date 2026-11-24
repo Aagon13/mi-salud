@@ -1,0 +1,17 @@
+{
+  "name": "mi-salud-pwa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mi Salud: hábitos, compra, planificación de comida y entrenamiento",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "serve": "python3 -m http.server 8080 --directory dist",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test tests/*.test.mjs",
+    "pretest": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
