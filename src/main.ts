@@ -75,13 +75,13 @@ function openPantry(id?:string):void{
   const p=state.pantry.find(x=>x.id===id);
   const habitual=p?.habitual??true;
   showModal(`${modalHeading(p?'Editar producto':'Añadir producto','Define cuánto tienes y cómo quieres reponerlo.')}
-    <form id="form-pantry" class="form-grid" autocomplete="off"><input type="hidden" name="id" value="${esc(p?.id??'')}">
+    <form id="form-pantry" class="form-grid" autocomplete="off" novalidate><input type="hidden" name="id" value="${esc(p?.id??'')}">
     ${field('Producto',`<input name="productName" autocomplete="off" placeholder="Ej. Kéfir" value="${esc(p?.name??'')}" maxlength="80" required>`)}
     <div class="form-pair">${field('Cantidad que tengo ahora',numberField('quantity',p?.quantity??1,'0'))}${field('Unidad',`<select name="unit">${optUnits(p?.unit??'ud')}</select>`)}</div>
     <label class="habitual-toggle"><input type="checkbox" name="habitual" ${habitual?'checked':''}><span><b>Lo compro habitualmente</b><small>Que aparezca automáticamente cuando me quede poco.</small></span></label>
     <div class="form-pair">${field('Avisarme si tengo menos de',numberField('minStock',p?.minStock??1,'0.01'))}${field('Cantidad que quiero tener',numberField('restockQuantity',p?.restockQuantity??Math.max(p?.quantity??1,1),'0.01'))}</div>
     <p class="note">Ejemplo: mínimo 1 y objetivo 3 → si quedan 0, añade 3; si quedan 0,5, añade 2,5.</p>
-    <button class="btn btn-primary btn-wide" type="submit">${icon('save',18)} Guardar producto</button></form>`);
+    <p class="pantry-form-error" role="alert" aria-live="polite" hidden></p><button class="btn btn-primary btn-wide" type="submit">${icon('save',18)} Guardar producto</button></form>`);
 }
 function openGrocery():void{
   showModal(`${modalHeading('Añadir a la compra')}<form id="form-grocery" class="form-grid" autocomplete="off">
@@ -203,11 +203,17 @@ async function submit(form:HTMLFormElement):Promise<void> {
   const fd=new FormData(form);const str=(name:string)=>String(fd.get(name)??'').trim();const num=(name:string)=>Number(str(name));
   switch(form.id){
     case 'form-pantry':{
-      const name=str('productName'),qty=num('quantity'),unit=str('unit') as Unit,id=str('id');
-      const habitual=fd.has('habitual'),minStock=num('minStock'),restockQuantity=num('restockQuantity');
-      if(!name || name.length>80 || !Number.isFinite(qty)||qty<0 || !['g','kg','ud','ml','l'].includes(unit)
-        || !positive(minStock)||!positive(restockQuantity)||minStock>100000||restockQuantity>100000)
-        throw Error('Revisa las cantidades del producto.');
+      const name=str('productName'),qtyText=str('quantity'),qty=Number(qtyText.replace(',','.'));
+      const unit=str('unit') as Unit,id=str('id'),habitual=fd.has('habitual');
+      const minRaw=str('minStock'),restockRaw=str('restockQuantity');
+      const minStock=minRaw===''?1:Number(minRaw.replace(',','.'));
+      const restockQuantity=restockRaw===''?Math.max(1,qty):Number(restockRaw.replace(',','.'));
+      if(!name)throw Error('Escribe el nombre del producto antes de guardar.');
+      if(name.length>80)throw Error('El nombre no puede superar los 80 caracteres.');
+      if(qtyText===''||!Number.isFinite(qty)||qty<0)throw Error('Indica una cantidad válida, igual o superior a cero.');
+      if(!['g','kg','ud','ml','l'].includes(unit))throw Error('Selecciona una unidad válida.');
+      if(!Number.isFinite(minStock)||minStock<0||minStock>100000)throw Error('Revisa el mínimo para avisarte (puede ser cero).');
+      if(!Number.isFinite(restockQuantity)||restockQuantity<=0||restockQuantity>100000)throw Error('La cantidad que quieres tener debe ser mayor que cero.');
       const previous=state.pantry.find(x=>x.id===id);
       if(previous){previous.name=name;previous.quantity=qty;previous.unit=unit;previous.updatedAt=new Date().toISOString();
         previous.habitual=habitual;previous.minStock=minStock;previous.restockQuantity=restockQuantity;}
@@ -305,7 +311,14 @@ document.addEventListener('change',event=>{
 document.addEventListener('submit',event=>{
   const form=event.target as HTMLFormElement;if(!(form instanceof HTMLFormElement))return;
   event.preventDefault();if(saving)return;
-  void submit(form).catch(err=>toast(err instanceof Error?err.message:'Comprueba los datos',true));
+  void submit(form).catch(err=>{
+    const message=err instanceof Error?err.message:'Comprueba los datos';
+    if(form.id==='form-pantry'){
+      const error= form.querySelector<HTMLElement>('.pantry-form-error');
+      if(error){error.textContent=message;error.hidden=false;error.scrollIntoView({block:'nearest'});}
+    }
+    toast(message,true);
+  });
 });
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modalRoot.innerHTML)closeModal();});
 
