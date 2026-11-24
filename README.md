@@ -87,3 +87,5 @@ Proyecto personal. Sin dependencias de ejecución ni servicios externos obligato
 La publicación se actualiza automáticamente cuando se incorporan mejoras a la rama `main`.
 
 <!-- Ajuste de publicación PWA Android v0.2.2 -->
+
+<!-- Republicación de validación de despensa: 24-11-2026 -->
