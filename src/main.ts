@@ -63,7 +63,9 @@ function showModal(content:string):void {
   lastModalFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
   modalRoot.innerHTML=`<div class="modal-shade"><div class="modal-card" role="dialog" aria-modal="true" aria-label="Formulario" tabindex="-1">${content}</div></div>`;
   document.body.classList.add('modal-open');
-  modalRoot.querySelector<HTMLElement>('input,textarea,select,button')?.focus();
+  // Focus the dialog itself: auto-focusing a text field opens the mobile keyboard
+  // while the overlay is moving, which can turn the following tap into a backdrop tap.
+  modalRoot.querySelector<HTMLElement>('.modal-card')?.focus({preventScroll:true});
 }
 function closeModal():void{modalRoot.innerHTML='';document.body.classList.remove('modal-open');lastModalFocus?.focus();}
 function modalHeading(title:string,subtitle=''):string {return `<div class="modal-head"><div><h2>${esc(title)}</h2>${subtitle?`<p>${esc(subtitle)}</p>`:''}</div><button class="icon-btn" data-action="close-modal" type="button" aria-label="Cerrar">${icon('close')}</button></div>`;}
@@ -272,7 +274,8 @@ async function submit(form:HTMLFormElement):Promise<void> {
 
 document.addEventListener('click',event=>{
   const target=event.target as Element;
-  if(target.classList.contains('modal-shade')){closeModal();return;}
+  // Backdrop taps must never close the dialog: mobile keyboards can generate a
+  // synthetic click on this backdrop after the viewport moves. Use X or Escape.
   const button=target.closest<HTMLElement>('[data-action]');
   if(!button || saving)return;
   event.preventDefault();

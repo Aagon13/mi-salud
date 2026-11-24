@@ -16,3 +16,10 @@
 .habitual-toggle small{font-size:11px;color:var(--muted);margin-top:3px}
 .mini-habitual{display:inline-block;vertical-align:middle;margin-left:5px;color:#65dfab;background:#1a433b;border-radius:6px;font-size:10px;font-weight:700;padding:2px 5px}
 @media(max-width:440px){.quick-pantry-form{flex-wrap:wrap}.quick-pantry-form input{flex-basis:100%}.quick-pantry-form button{width:100%;justify-content:center}.quick-pantry-card{padding:15px}}
+
+/* v0.2.1: keyboard-safe dialogs on phones. Do not recenter when the keyboard opens. */
+@media(max-width:720px){
+  .modal-shade{align-items:flex-start;overflow-y:auto;overscroll-behavior:contain;padding:12px 10px}
+  .modal-card{max-height:calc(100dvh - 24px);overscroll-behavior:contain}
+  .modal-card input,.modal-card textarea,.modal-card select,.quick-pantry-form input{font-size:16px;touch-action:manipulation}
+}
