@@ -61,7 +61,7 @@ async function commit(message='Guardado'):Promise<void>{
 }
 function showModal(content:string):void {
   lastModalFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
-  modalRoot.innerHTML=`<div class="modal-shade" data-action="close-modal"><div class="modal-card" role="dialog" aria-modal="true" aria-label="Formulario" tabindex="-1">${content}</div></div>`;
+  modalRoot.innerHTML=`<div class="modal-shade"><div class="modal-card" role="dialog" aria-modal="true" aria-label="Formulario" tabindex="-1">${content}</div></div>`;
   document.body.classList.add('modal-open');
   modalRoot.querySelector<HTMLElement>('input,textarea,select,button')?.focus();
 }
@@ -73,8 +73,8 @@ function openPantry(id?:string):void{
   const p=state.pantry.find(x=>x.id===id);
   const habitual=p?.habitual??true;
   showModal(`${modalHeading(p?'Editar producto':'Añadir producto','Define cuánto tienes y cómo quieres reponerlo.')}
-    <form id="form-pantry" class="form-grid"><input type="hidden" name="id" value="${esc(p?.id??'')}">
-    ${field('Producto',`<input name="name" placeholder="Ej. Kéfir" value="${esc(p?.name??'')}" maxlength="80" required>`)}
+    <form id="form-pantry" class="form-grid" autocomplete="off"><input type="hidden" name="id" value="${esc(p?.id??'')}">
+    ${field('Producto',`<input name="productName" autocomplete="off" placeholder="Ej. Kéfir" value="${esc(p?.name??'')}" maxlength="80" required>`)}
     <div class="form-pair">${field('Cantidad que tengo ahora',numberField('quantity',p?.quantity??1,'0'))}${field('Unidad',`<select name="unit">${optUnits(p?.unit??'ud')}</select>`)}</div>
     <label class="habitual-toggle"><input type="checkbox" name="habitual" ${habitual?'checked':''}><span><b>Lo compro habitualmente</b><small>Que aparezca automáticamente cuando me quede poco.</small></span></label>
     <div class="form-pair">${field('Avisarme si tengo menos de',numberField('minStock',p?.minStock??1,'0.01'))}${field('Cantidad que quiero tener',numberField('restockQuantity',p?.restockQuantity??Math.max(p?.quantity??1,1),'0.01'))}</div>
@@ -82,8 +82,8 @@ function openPantry(id?:string):void{
     <button class="btn btn-primary btn-wide" type="submit">${icon('save',18)} Guardar producto</button></form>`);
 }
 function openGrocery():void{
-  showModal(`${modalHeading('Añadir a la compra')}<form id="form-grocery" class="form-grid">
-    ${field('Producto',`<input name="name" placeholder="Ej. Leche" maxlength="80" required>`)}
+  showModal(`${modalHeading('Añadir a la compra')}<form id="form-grocery" class="form-grid" autocomplete="off">
+    ${field('Producto',`<input name="productName" autocomplete="off" placeholder="Ej. Leche" maxlength="80" required>`)}
     <div class="form-pair">${field('Cantidad',numberField('quantity'))}${field('Unidad',`<select name="unit">${optUnits('ud')}</select>`)}</div>
     <button class="btn btn-primary btn-wide" type="submit">Añadir a la lista</button></form>`);
 }
@@ -201,7 +201,7 @@ async function submit(form:HTMLFormElement):Promise<void> {
   const fd=new FormData(form);const str=(name:string)=>String(fd.get(name)??'').trim();const num=(name:string)=>Number(str(name));
   switch(form.id){
     case 'form-pantry':{
-      const name=str('name'),qty=num('quantity'),unit=str('unit') as Unit,id=str('id');
+      const name=str('productName'),qty=num('quantity'),unit=str('unit') as Unit,id=str('id');
       const habitual=fd.has('habitual'),minStock=num('minStock'),restockQuantity=num('restockQuantity');
       if(!name || name.length>80 || !Number.isFinite(qty)||qty<0 || !['g','kg','ud','ml','l'].includes(unit)
         || !positive(minStock)||!positive(restockQuantity)||minStock>100000||restockQuantity>100000)
@@ -221,7 +221,7 @@ async function submit(form:HTMLFormElement):Promise<void> {
       await commit(message);break;
     }
     case 'form-grocery':{
-      const name=str('name'),qty=num('quantity'),unit=str('unit') as Unit;
+      const name=str('productName'),qty=num('quantity'),unit=str('unit') as Unit;
       if(!name||name.length>80||!positive(qty)||!['g','kg','ud','ml','l'].includes(unit))throw Error('Indica un producto y una cantidad válida.');
       const existing=state.groceries.find(g=>normalizeName(g.name)===normalizeName(name) && g.unit===unit);
       if(existing)existing.quantity+=qty;else state.groceries.push({id:uid(),name,quantity:qty,unit});
