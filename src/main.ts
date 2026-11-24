@@ -81,7 +81,7 @@ function openPantry(id?:string):void{
     <label class="habitual-toggle"><input type="checkbox" name="habitual" ${habitual?'checked':''}><span><b>Lo compro habitualmente</b><small>Que aparezca automáticamente cuando me quede poco.</small></span></label>
     <div class="form-pair">${field('Avisarme si tengo menos de',numberField('minStock',p?.minStock??1,'0.01'))}${field('Cantidad que quiero tener',numberField('restockQuantity',p?.restockQuantity??Math.max(p?.quantity??1,1),'0.01'))}</div>
     <p class="note">Ejemplo: mínimo 1 y objetivo 3 → si quedan 0, añade 3; si quedan 0,5, añade 2,5.</p>
-    <p class="pantry-form-error" role="alert" aria-live="polite" hidden></p><button class="btn btn-primary btn-wide" type="submit">${icon('save',18)} Guardar producto</button></form>`);
+    <p class="pantry-form-error" role="alert" aria-live="polite" hidden></p><button class="btn btn-primary btn-wide" type="button" data-action="save-pantry">${icon('save',18)} Guardar producto</button></form>`);
 }
 function openGrocery():void{
   showModal(`${modalHeading('Añadir a la compra')}<form id="form-grocery" class="form-grid" autocomplete="off">
@@ -147,6 +147,23 @@ async function act(action:string,el:HTMLElement):Promise<void>{
     case 'go':current=(TABS.find(t=>t.id===el.dataset.tab)?.id??'home');closeModal();render(true);break;
     case 'toggle-mission':{if(!missions.some(x=>x.id===id))return;toggleMission(state,localDate(),id);await commit('Progreso actualizado');break;}
     case 'new-pantry':openPantry();break;
+    case 'save-pantry':{
+      const form=modalRoot.querySelector<HTMLFormElement>('#form-pantry');
+      if(!form){toast('No se encontró el formulario de producto.',true);return;}
+      const button=el as HTMLButtonElement;
+      button.disabled=true;
+      button.textContent='Guardando…';
+      try {await submit(form);}
+      catch(error){
+        const message=error instanceof Error?error.message:'No se pudo guardar el producto.';
+        const warning=form.querySelector<HTMLElement>('.pantry-form-error');
+        if(warning){warning.textContent=message;warning.hidden=false;warning.scrollIntoView({block:'nearest'});}
+        toast(message,true);
+        button.disabled=false;
+        button.textContent='Guardar producto';
+      }
+      break;
+    }
     case 'edit-pantry':openPantry(id);break;
     case 'deplete-pantry':{
       const p=state.pantry.find(x=>x.id===id);if(!p)return;
