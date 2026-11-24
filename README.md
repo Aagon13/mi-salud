@@ -83,3 +83,5 @@ tests/                  pruebas de lógica
 ## Licencia
 
 Proyecto personal. Sin dependencias de ejecución ni servicios externos obligatorios.
+
+La publicación se actualiza automáticamente cuando se incorporan mejoras a la rama `main`.
