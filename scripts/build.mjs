@@ -3,11 +3,15 @@ import { cpSync, copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSy
 import { join, relative, sep } from 'node:path';
 const root=new URL('../',import.meta.url).pathname;
 const dist=join(root,'dist');
+const deploymentVersion=Date.now().toString(36);
 rmSync(dist,{recursive:true,force:true});
 mkdirSync(dist,{recursive:true});
 execFileSync('tsc',['-p','tsconfig.json'],{cwd:root,stdio:'inherit'});
 cpSync(join(root,'public'),dist,{recursive:true});
-copyFileSync(join(root,'index.html'),join(dist,'index.html'));
+const html=readFileSync(join(root,'index.html'),'utf8')
+  .replace('./assets/main.js','./assets/main.js?v='+deploymentVersion)
+  .replace('./assets/styles.css','./assets/styles.css?v='+deploymentVersion);
+writeFileSync(join(dist,'index.html'),html);
 copyFileSync(join(root,'src/styles.css'),join(dist,'assets/styles.css'));
 const assets=[];
 function collect(folder){for(const entry of readdirSync(folder,{withFileTypes:true})){
@@ -17,6 +21,7 @@ function collect(folder){for(const entry of readdirSync(folder,{withFileTypes:tr
 }}
 collect(dist);
 assets.push('./');
+assets.push('./assets/main.js?v='+deploymentVersion,'./assets/styles.css?v='+deploymentVersion);
 const version='mi-salud-v1-'+Date.now();
 const worker=`const CACHE=${JSON.stringify(version)};
 const ASSETS=${JSON.stringify(assets)};
@@ -28,6 +33,14 @@ self.addEventListener('fetch',event=>{
   if(url.origin!==self.location.origin || !url.href.startsWith(self.registration.scope))return;
   // Always check online for updated pages; retain offline fallback for installed PWAs.
   if(event.request.mode==='navigate') { event.respondWith(fetch(event.request).catch(()=>caches.match('./index.html'))); return; }
+  // JS and CSS must be network-first so a prior cache cannot hold on to the buggy dialog.
+  if(/\\.(?:js|css)$/.test(url.pathname)){
+    event.respondWith(fetch(event.request).then(resp=>{
+      if(resp.ok){const copy=resp.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}
+      return resp;
+    }).catch(()=>caches.match(event.request).then(cached=>cached||Response.error())));
+    return;
+  }
   event.respondWith(caches.match(event.request).then(cached=>cached||fetch(event.request).then(resp=>{
     if(resp.ok){const copy=resp.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}
     return resp;

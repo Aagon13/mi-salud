@@ -48,7 +48,7 @@ function render(resetScroll=false):void {
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
     <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):health(state)}</main>
-    <footer class="page-footer">Mi Salud · v0.2 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
+    <footer class="page-footer">Mi Salud · v0.2.2 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
     <nav class="bottom-nav" aria-label="Navegación móvil">${TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
@@ -313,6 +313,11 @@ async function boot():Promise<void>{
   try {state=await loadData();}catch(err){console.error(err);toast('No se pudo acceder al almacenamiento. Los cambios podrían perderse.',true);}
   render();
   if('serviceWorker' in navigator && location.protocol==='https:' || ('serviceWorker' in navigator && location.hostname==='localhost')){
+    // Refresh once when an updated service worker becomes active so the corrected UI loads.
+    let refreshing=false;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{
+      if(!refreshing){refreshing=true;window.location.reload();}
+    });
     navigator.serviceWorker.register('./service-worker.js').catch(err=>console.warn('PWA sin modo sin conexión',err));
   }
 }
