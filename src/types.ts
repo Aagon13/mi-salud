@@ -3,7 +3,11 @@ export type Category = 'fuerza' | 'nutricion' | 'movilidad' | 'descanso';
 export type MealKind = 'comida' | 'cena';
 
 export interface Ingredient { name: string; quantity: number; unit: Unit }
-export interface PantryItem { id: string; name: string; quantity: number; unit: Unit; updatedAt: string }
+/** Los campos opcionales conservan la compatibilidad con los registros de la versión 0.1. */
+export interface PantryItem {
+  id: string; name: string; quantity: number; unit: Unit; updatedAt: string;
+  habitual?: boolean; minStock?: number; restockQuantity?: number;
+}
 export interface Recipe {
   id: string; name: string; servings: number; ingredients: Ingredient[];
   method: string; photo?: string; isExample?: boolean

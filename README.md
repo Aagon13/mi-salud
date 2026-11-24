@@ -1,11 +1,11 @@
-# Mi Salud · PWA v0.1
+# Mi Salud · PWA v0.2
 
 Primera versión funcional para organizar **deporte, alimentación y salud**, con estética RPG y datos privados en tu dispositivo.
 
 ## Funcionalidades operativas
 
 - **Hoy:** nivel general, niveles de Fuerza/Nutrición/Movilidad/Descanso, misiones diarias y XP; cada misión solo puntúa una vez por día.
-- **Despensa:** añadir y editar productos con cantidad/unidad, marcar agotados y enviarlos a la lista de compra.
+- **Despensa v0.2:** productos habituales con mínimo y cantidad objetivo; al agotarse, la lista de compra se calcula automáticamente. Entrada rápida por texto o dictado desde el teclado móvil (sin IA), registro de compras, lista unificada sin duplicados y copiar al portapapeles.
 - **Recetas:** crear, editar y eliminar recetas; ingredientes y cantidades; guardar una foto opcional (se reduce antes de almacenarla); ejemplos iniciales que puedes modificar.
 - **Táperes:** indicar raciones cocinadas y si las guardas en nevera o congelador. Cocinar descuenta los ingredientes disponibles; consumir reduce las raciones.
 - **Semana:** planificar 14 comidas/cenas, elegir recetas y número de raciones; comprobar si alcanzan los ingredientes/táperes de la semana; comprar productos de la lista.
@@ -66,7 +66,7 @@ tests/                  pruebas de lógica
 
 ## Límites de esta versión
 
-- **No hay reconocimiento de tickets ni chat con IA todavía.** No existe conexión con modelos externos.
+- **No hay reconocimiento de tickets ni chat con IA todavía. El dictado funciona con el micrófono del teclado del móvil, no es un asistente de voz integrado.** No existe conexión con modelos externos.
 - No envía notificaciones ni sincroniza entre móviles y ordenadores.
 - La disponibilidad semanal es una estimación basada en la despensa que hayas actualizado y las raciones registradas; no deduce automáticamente lo que has comido.
 - Las recetas iniciales son **ejemplos**, no una lista exacta de tus recetas ni de lo que tienes en casa.
@@ -75,7 +75,7 @@ tests/                  pruebas de lógica
 
 ## Hoja de ruta
 
-- **v0.2**: registro rápido de compras, fotos de tickets con lectura asistida por IA y confirmación de productos.
+- **v0.2**: compras recurrentes, reposición y registro rápido por texto (implementado). La lectura de tickets con IA se traslada a una versión posterior.
 - **v0.3**: recetas enviadas por texto o imagen, favoritos, menú sugerido y cálculo nutricional aproximado.
 - **v0.4**: seguimiento de ejercicios, pesos y series, métricas de volumen semanal.
 - **v0.5**: sincronización opcional segura entre dispositivos, recordatorios configurables y revisión de caducidades.

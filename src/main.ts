@@ -8,8 +8,9 @@ import { health } from './screens/health.js';
 import { currentWeek, localDate } from './lib/dates.js';
 import { loadData, saveData, isValidBackup, downloadBackup } from './lib/storage.js';
 import { toggleMission, levelInfo, totalXP } from './lib/progress.js';
-import { addToPantry, cookRecipe, enoughForRecipe } from './lib/planner.js';
-import { escapeHTML as esc, optUnits, positive, uid, shrinkPhoto, normalizeName } from './lib/helpers.js';
+import { addToPantry, cookRecipe, enoughForRecipe, computeCoverage } from './lib/planner.js';
+import { applyQuickCommand, markOut, purchase, shoppingList } from './lib/shopping.js';
+import { escapeHTML as esc, optUnits, positive, uid, shrinkPhoto, normalizeName, joinKey } from './lib/helpers.js';
 import { icon } from './ui/icons.js';
 import type { AppData, Ingredient, Recipe, Unit } from './types.js';
 
@@ -47,7 +48,7 @@ function render(resetScroll=false):void {
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
     <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):health(state)}</main>
-    <footer class="page-footer">Mi Salud · v0.1 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
+    <footer class="page-footer">Mi Salud · v0.2 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
     <nav class="bottom-nav" aria-label="Navegación móvil">${TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
@@ -70,10 +71,14 @@ function field(label:string,input:string):string{return `<label class="field">${
 function numberField(name:string,val:string|number='1',min='0.01'):string{return `<input name="${name}" type="number" step="any" min="${min}" value="${esc(val)}" required>`;}
 function openPantry(id?:string):void{
   const p=state.pantry.find(x=>x.id===id);
-  showModal(`${modalHeading(p?'Editar producto':'Añadir producto','Se guardará en tu despensa.')}
+  const habitual=p?.habitual??true;
+  showModal(`${modalHeading(p?'Editar producto':'Añadir producto','Define cuánto tienes y cómo quieres reponerlo.')}
     <form id="form-pantry" class="form-grid"><input type="hidden" name="id" value="${esc(p?.id??'')}">
     ${field('Producto',`<input name="name" placeholder="Ej. Kéfir" value="${esc(p?.name??'')}" maxlength="80" required>`)}
-    <div class="form-pair">${field('Cantidad',numberField('quantity',p?.quantity??1,'0'))}${field('Unidad',`<select name="unit">${optUnits(p?.unit??'ud')}</select>`)}</div>
+    <div class="form-pair">${field('Cantidad que tengo ahora',numberField('quantity',p?.quantity??1,'0'))}${field('Unidad',`<select name="unit">${optUnits(p?.unit??'ud')}</select>`)}</div>
+    <label class="habitual-toggle"><input type="checkbox" name="habitual" ${habitual?'checked':''}><span><b>Lo compro habitualmente</b><small>Que aparezca automáticamente cuando me quede poco.</small></span></label>
+    <div class="form-pair">${field('Avisarme si tengo menos de',numberField('minStock',p?.minStock??1,'0.01'))}${field('Cantidad que quiero tener',numberField('restockQuantity',p?.restockQuantity??Math.max(p?.quantity??1,1),'0.01'))}</div>
+    <p class="note">Ejemplo: mínimo 1 y objetivo 3 → si quedan 0, añade 3; si quedan 0,5, añade 2,5.</p>
     <button class="btn btn-primary btn-wide" type="submit">${icon('save',18)} Guardar producto</button></form>`);
 }
 function openGrocery():void{
@@ -131,7 +136,7 @@ function markDone(id:string):void {
 }
 function buyMissing(name:string,qty:number,unit:Unit):void {
   if(!name||!positive(qty))return;
-  addToPantry(state,name,qty,unit);
+  purchase(state,name,qty,unit);
   void commit('Compra añadida a la despensa');
 }
 async function act(action:string,el:HTMLElement):Promise<void>{
@@ -143,16 +148,22 @@ async function act(action:string,el:HTMLElement):Promise<void>{
     case 'edit-pantry':openPantry(id);break;
     case 'deplete-pantry':{
       const p=state.pantry.find(x=>x.id===id);if(!p)return;
-      const old=p.quantity;p.quantity=0;p.updatedAt=new Date().toISOString();
-      if(!state.groceries.some(g=>normalizeName(g.name)===normalizeName(p.name))) state.groceries.push({id:uid(),name:p.name,quantity:Math.max(old,1),unit:p.unit});
+      markOut(state,p.name);
       await commit(`${p.name} añadido a la compra`);break;
     }
     case 'new-grocery':openGrocery();break;
-    case 'delete-grocery':state.groceries=state.groceries.filter(g=>g.id!==id);await commit('Quitado de la lista');break;
-    case 'buy-grocery':{
-      const g=state.groceries.find(x=>x.id===id);if(!g)return;
-      addToPantry(state,g.name,g.quantity,g.unit);state.groceries=state.groceries.filter(x=>x.id!==id);
-      await commit('Producto guardado en despensa');break;
+    case 'delete-grocery':state.groceries=state.groceries.filter(g=>g.id!==id);await commit('Apunte eliminado');break;
+    case 'buy-shopping':{
+      const name=el.dataset.name??'',qty=Number(el.dataset.qty),unit=el.dataset.unit as Unit;
+      if(!['g','kg','ud','ml','l'].includes(unit))throw Error('Unidad desconocida.');
+      purchase(state,name,qty,unit);await commit('Compra guardada en despensa');break;
+    }
+    case 'copy-shopping':{
+      const list=shoppingList(state,computeCoverage(state,currentWeek()).missing);
+      if(!list.length){toast('No hay compras pendientes');break;}
+      if(!navigator.clipboard?.writeText)throw Error('Tu navegador no permite copiar la lista.');
+      await navigator.clipboard.writeText('Lista de la compra · Mi Salud\n'+list.map(i=>`☐ ${i.name} — ${Number(i.quantity.toFixed(2))} ${i.unit}`).join('\n'));
+      toast('Lista copiada al portapapeles');break;
     }
     case 'buy-missing':buyMissing(el.dataset.name??'',Number(el.dataset.qty),el.dataset.unit as Unit);break;
     case 'new-recipe':openRecipe();break;
@@ -191,11 +202,23 @@ async function submit(form:HTMLFormElement):Promise<void> {
   switch(form.id){
     case 'form-pantry':{
       const name=str('name'),qty=num('quantity'),unit=str('unit') as Unit,id=str('id');
-      if(!name || name.length>80 || !Number.isFinite(qty)||qty<0 || !['g','kg','ud','ml','l'].includes(unit))throw Error('Revisa los datos del producto.');
+      const habitual=fd.has('habitual'),minStock=num('minStock'),restockQuantity=num('restockQuantity');
+      if(!name || name.length>80 || !Number.isFinite(qty)||qty<0 || !['g','kg','ud','ml','l'].includes(unit)
+        || !positive(minStock)||!positive(restockQuantity)||minStock>100000||restockQuantity>100000)
+        throw Error('Revisa las cantidades del producto.');
       const previous=state.pantry.find(x=>x.id===id);
-      if(previous){previous.name=name;previous.quantity=qty;previous.unit=unit;previous.updatedAt=new Date().toISOString();}
-      else addToPantry(state,name,qty,unit);
+      if(previous){previous.name=name;previous.quantity=qty;previous.unit=unit;previous.updatedAt=new Date().toISOString();
+        previous.habitual=habitual;previous.minStock=minStock;previous.restockQuantity=restockQuantity;}
+      else {
+        addToPantry(state,name,qty,unit);
+        const added=state.pantry.find(x=>joinKey(x.name,x.unit)===joinKey(name,unit));
+        if(added){added.habitual=habitual;added.minStock=minStock;added.restockQuantity=restockQuantity;}
+      }
       closeModal();await commit('Despensa actualizada');break;
+    }
+    case 'form-pantry-quick':{
+      const message=applyQuickCommand(state,str('phrase'));
+      await commit(message);break;
     }
     case 'form-grocery':{
       const name=str('name'),qty=num('quantity'),unit=str('unit') as Unit;

@@ -4,6 +4,7 @@ import { initialData,missions,routines } from '../dist/assets/data/seed.js';
 import { levelInfo, toggleMission,totalXP,isMissionDone } from '../dist/assets/lib/progress.js';
 import { computeCoverage,addToPantry,cookRecipe,enoughForRecipe } from '../dist/assets/lib/planner.js';
 import { isValidBackup } from '../dist/assets/lib/storage.js';
+import { shoppingList, markOut, purchase, parseQuickCommand, applyQuickCommand } from '../dist/assets/lib/shopping.js';
 import { weekStart,addDays } from '../dist/assets/lib/dates.js';
 
 const week='2026-11-23';
@@ -45,4 +46,47 @@ test('Fechas semana Monday a Sunday',()=>{
 test('Se valida la estructura de una copia de seguridad',()=>{
  assert.equal(isValidBackup(initialData()),true);
  assert.equal(isValidBackup({version:1}),false);
+});
+
+test('Los habituales generan reposición, sin duplicados al añadir un apunte',()=>{
+ const s=initialData();addToPantry(s,'Leche',2,'l');
+ Object.assign(s.pantry[0],{habitual:true,minStock:1,restockQuantity:3});
+ assert.equal(shoppingList(s).length,0);
+ s.pantry[0].quantity=.5;
+ s.groceries.push({id:'a',name:'leche',quantity:1,unit:'l'});
+ const list=shoppingList(s);
+ assert.equal(list.length,1);assert.equal(list[0].quantity,2.5);
+ assert.equal(list[0].manualIds[0],'a');
+ purchase(s,'Leche',2.5,'l');
+ assert.equal(s.pantry[0].quantity,3);assert.equal(shoppingList(s).length,0);
+});
+test('El texto de agotamiento respeta los productos habituales',()=>{
+ const s=initialData();addToPantry(s,'Huevos',6,'ud');
+ Object.assign(s.pantry[0],{habitual:true,minStock:1,restockQuantity:12});
+ assert.deepEqual(parseQuickCommand('Se me han terminado los huevos'),{action:'out',name:'huevos'});
+ applyQuickCommand(s,'Se me han terminado los huevos');
+ assert.equal(s.pantry[0].quantity,0);
+ assert.equal(shoppingList(s)[0].quantity,12);
+ assert.equal(s.groceries.length,0);
+});
+test('La compra dictada restaura la despensa y evita duplicar manuales',()=>{
+ const s=initialData();
+ applyQuickCommand(s,'Se me ha terminado la leche');
+ assert.equal(shoppingList(s)[0].quantity,1);
+ assert.equal(s.pantry[0].habitual,true);
+ applyQuickCommand(s,'He comprado 2 unidades de leche');
+ assert.equal(s.pantry[0].quantity,2);
+ assert.equal(shoppingList(s).length,0);
+});
+test('Los faltantes del menú se unen a los habituales por unidad convertible',()=>{
+ const s=initialData();addToPantry(s,'Arroz',0,'kg');
+ Object.assign(s.pantry[0],{habitual:true,minStock:0.1,restockQuantity:1});
+ const list=shoppingList(s,[{name:'arroz',quantity:700,unit:'g'}]);
+ assert.equal(list.length,1);assert.equal(list[0].quantity,1);
+});
+test('Los productos no habituales agotados siguen creando un apunte manual',()=>{
+ const s=initialData();addToPantry(s,'Cacao',2,'ud');markOut(s,'Cacao');
+ assert.equal(s.pantry[0].quantity,0);
+ assert.equal(s.groceries.length,1);
+ assert.equal(shoppingList(s)[0].quantity,2);
 });
