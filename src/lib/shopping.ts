@@ -186,7 +186,9 @@ export function removeFromPantry(s:AppData,id:string):string {
   return item.name;
 }
 export function applyQuickCommand(s:AppData,text:string):string {
-  const cmd=parseQuickCommand(text);
+  return applyQuickAction(s,parseQuickCommand(text));
+}
+export function applyQuickAction(s:AppData,cmd:QuickCommand):string {
   if(cmd.action==='out')return markOut(s,cmd.name)+' agotado y apuntado a la compra';
   if(cmd.action==='remove'){
     const matches=s.pantry.filter(p=>productKey(p.name)===productKey(cmd.name));

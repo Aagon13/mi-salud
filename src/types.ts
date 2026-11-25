@@ -27,6 +27,8 @@ export interface AppData {
   version: 1; pantry: PantryItem[]; recipes: Recipe[];
   /** Opcional para conservar los datos anteriores. */
   purchases?:PurchaseRecord[];
+  /** Supermercado recordado mientras se registran compras por voz. */
+  shoppingStore?:string;
   /** Fotos en IndexedDB, metadatos en el mismo estado local de siempre. */
   receipts?:ReceiptRecord[];
   prepared: PreparedMeal[]; plan: PlannedMeal[]; groceries: GroceryItem[];
