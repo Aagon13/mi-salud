@@ -117,3 +117,13 @@ details summary{cursor:pointer;font-size:12px;color:#b9d0dd}
 .pantry-advanced summary{cursor:pointer;font-size:13px;color:#b7d6e0}
 .pantry-advanced .form-pair{margin-top:14px}
 @media(max-width:460px){.pantry-row-actions{gap:0}.pantry-row-actions .icon-btn{width:30px;min-width:30px;padding:5px}.stock-row{gap:6px}}
+
+/* Registro único v0.9 */
+.assistant-compose textarea{flex:1 1 195px;min-width:0;min-height:72px;padding:12px;border-radius:11px;background:#0d1b29;border:1px solid #42645d;color:var(--text);font-size:16px;resize:vertical}
+.voice-review-list{border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.voice-review-row{display:grid;grid-template-columns:68px 1fr auto auto;align-items:center;gap:8px;padding:11px 0;border-bottom:1px solid var(--line);font-size:13px}
+.voice-review-row:last-child{border-bottom:0}
+.voice-review-row b{font-size:11px;color:#80d8b2}
+.voice-review-row small{color:var(--muted)}
+.voice-review-row strong{font-size:12px}
+@media(max-width:460px){.assistant-compose textarea{flex-basis:100%}.voice-review-row{grid-template-columns:60px 1fr auto}.voice-review-row strong{grid-column:2 / -1}}

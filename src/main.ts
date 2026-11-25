@@ -14,7 +14,7 @@ import { addToPantry, cookRecipe, enoughForRecipe, computeCoverage } from './lib
 import { applyQuickCommand, markOut, purchase, shoppingList, consumePantry, removeFromPantry } from './lib/shopping.js';
 import { parseReceiptText, parseReviewedReceipt } from './lib/receipt.js';
 import { registerPurchase } from './lib/buyingAdvice.js';
-import { processAssistantMessage } from './lib/assistant.js';
+import { parseVoicePlan, applyVoicePlan } from './lib/unifiedAssistant.js';
 import { escapeHTML as esc, optUnits, positive, uid, shrinkPhoto, normalizeName, joinKey } from './lib/helpers.js';
 import { icon } from './ui/icons.js';
 import type { AppData, Ingredient, Recipe, Unit, PurchaseRecord, ReceiptRecord } from './types.js';
@@ -65,7 +65,7 @@ function render(resetScroll=false):void {
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
     <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='expenses'?expenses(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):current==='more'?moreMenu():health(state)}</main>
-    <footer class="page-footer">Mi Salud · v0.8.2 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
+    <footer class="page-footer">Mi Salud · v0.9 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
     <nav class="bottom-nav" aria-label="Navegación móvil">${MOBILE_TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
@@ -140,40 +140,75 @@ async function savePurchase():Promise<void>{
   closeModal();await commit(previous?'Compra actualizada':'Compra y valoración guardadas');
 }
 let lastAssistantReply='';
-async function sendAssistantMessage(message:string):Promise<void>{
-  const result=processAssistantMessage(state,message);
-  lastAssistantReply=result.reply;
-  if(result.changed){
-    await commit('Apuntado en Mi Salud');
-  }else{
-    const panel=root.querySelector<HTMLElement>('#assistant-answer');
-    if(panel){panel.textContent=result.reply;panel.hidden=false;}
-  }
+let activeSpeech:BrowserRecognizer|null=null;
+function showAssistantReview(message:string):void{
+  const plan=parseVoicePlan(state,message);
+  const rows=plan.items.map(item=>{
+    const c=item.command;
+    const action=c.action==='bought'?'Compra':c.action==='set'?'En casa':c.action==='consume'?'Consumir':c.action==='list'?'Lista':c.action==='out'?'Agotado':'Eliminar';
+    const detail='quantity' in c?c.quantity+' '+(c.unit??'ud'):'';
+    return '<div class="voice-review-row"><b>'+esc(action)+'</b><span>'+esc(c.name)+'</span><small>'+esc(detail)+'</small><strong>'+ (item.totalPrice===undefined?'':esc(item.totalPrice.toFixed(2)+' €'))+'</strong></div>';
+  }).join('');
+  showModal(modalHeading('Revisar lo que has dicho','Comprueba los productos antes de registrarlos.')+
+    '<div class="form-grid">'+
+    field('Texto reconocido · puedes corregirlo','<textarea id="assistant-review-text" rows="4" maxlength="1600">'+esc(message)+'</textarea>')+
+    field('Supermercado para las compras · opcional si no indicas precios','<input id="assistant-review-store" maxlength="80" value="'+esc(plan.store??'')+'" placeholder="Ej. Mercadona">')+
+    '<div class="voice-review-list">'+(rows||'<p class="note">Solo se ha indicado el supermercado.</p>')+'</div>'+
+    '<p class="note">Los artículos sin precio no se suman al gasto. No se guardará nada hasta confirmar.</p>'+
+    '<button type="button" class="btn btn-secondary btn-wide" data-action="assistant-review-update">Volver a interpretar</button>'+
+    '<button type="button" class="btn btn-primary btn-wide" data-action="assistant-review-save">Confirmar cambios</button></div>');
 }
-type BrowserSpeechResult={results:ArrayLike<ArrayLike<{transcript:string}>>};
-type BrowserRecognizer={lang:string;interimResults:boolean;maxAlternatives:number;onresult:((e:BrowserSpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;start:()=>void};
+async function saveAssistantReview():Promise<void>{
+  const text=modalRoot.querySelector<HTMLTextAreaElement>('#assistant-review-text')?.value??'';
+  const typedStore=modalRoot.querySelector<HTMLInputElement>('#assistant-review-store')?.value.trim()??'';
+  const fresh=parseVoicePlan(state,text);
+  const savedStore=modalRoot.querySelector<HTMLElement>('.voice-review-list')?.getAttribute('data-reviewed-store')??null;
+  // Cada corrección del texto o supermercado debe actualizar la revisión visible.
+  if(fresh.store!==typedStore || savedStore!==typedStore){
+    showAssistantReview(text);
+    const store=modalRoot.querySelector<HTMLInputElement>('#assistant-review-store');
+    if(store)store.value=typedStore;
+    const list=modalRoot.querySelector<HTMLElement>('.voice-review-list');
+    if(list)list.setAttribute('data-reviewed-store',typedStore);
+    toast('Revisa la propuesta actualizada y vuelve a confirmar.');
+    return;
+  }
+  if(!fresh.items.length&&!typedStore)throw Error('No hay cambios.');
+  if(typedStore)fresh.store=typedStore;
+  if(!typedStore)fresh.store=undefined;
+  const summary=applyVoicePlan(state,fresh);
+  lastAssistantReply=summary;
+  closeModal();
+  await commit('Cambios guardados');
+}
+type BrowserSpeechResult={resultIndex:number;results:ArrayLike<ArrayLike<{transcript:string}>>};
+type BrowserRecognizer={lang:string;continuous:boolean;interimResults:boolean;maxAlternatives:number;onresult:((e:BrowserSpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;start:()=>void;stop:()=>void};
 function startVoiceQuestion():void{
+  if(activeSpeech){activeSpeech.stop();activeSpeech=null;toast('Dictado detenido. Revisa el texto.');return;}
   const speechWindow=window as Window & {SpeechRecognition?:new()=>BrowserRecognizer;webkitSpeechRecognition?:new()=>BrowserRecognizer};
   const Recognition=speechWindow.SpeechRecognition??speechWindow.webkitSpeechRecognition;
-  if(!Recognition){toast('El dictado directo no está disponible en este navegador. Usa el micrófono del teclado.',true);return;}
-  const input=root.querySelector<HTMLInputElement>('#assistant-message');
+  if(!Recognition){toast('Este navegador no permite el dictado directo. Utiliza el micrófono del teclado.',true);return;}
+  const input=root.querySelector<HTMLTextAreaElement>('#assistant-message');
   if(!input)return;
-  const recognizer=new Recognition();recognizer.lang='es-ES';recognizer.interimResults=false;recognizer.maxAlternatives=1;
+  const recognizer=new Recognition();
+  recognizer.lang='es-ES';recognizer.continuous=true;recognizer.interimResults=false;recognizer.maxAlternatives=1;
+  activeSpeech=recognizer;
   recognizer.onresult=e=>{
-    input.value=e.results[0]?.[0]?.transcript??'';
-    if(input.value){
+    const heard:string[]=[];
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const phrase=e.results[i]?.[0]?.transcript?.trim();
+      if(phrase)heard.push(phrase);
+    }
+    if(heard.length){
+      input.value=[input.value.trim(),...heard].filter(Boolean).join('; ').slice(0,1600);
       const panel=root.querySelector<HTMLElement>('#assistant-answer');
-      if(panel){
-        panel.textContent='He escuchado: «'+input.value+'». Revisa la frase y pulsa Enviar para guardarla.';
-        panel.hidden=false;
-      }
-      input.focus({preventScroll:true});
+      if(panel){panel.textContent='Dictado: '+input.value+'. Revisa y pulsa Enviar para continuar.';panel.hidden=false;}
     }
   };
-  recognizer.onerror=e=>toast('No se pudo escuchar: '+e.error,true);
-  recognizer.onend=()=>{};
-  try{recognizer.start();toast('Escuchando…');}
-  catch{toast('No se pudo iniciar el micrófono. Prueba el del teclado.',true);}
+  recognizer.onerror=e=>toast('Error de micrófono: '+e.error,true);
+  recognizer.onend=()=>{if(activeSpeech===recognizer)activeSpeech=null;};
+  try{recognizer.start();toast('Escuchando… Pulsa el micrófono otra vez para detener.');}
+  catch{activeSpeech=null;toast('No se pudo iniciar el micrófono.',true);}
 }
 function openReceipt():void{
   selectedReceiptFile=null;
@@ -401,6 +436,19 @@ async function act(action:string,el:HTMLElement):Promise<void>{
       await commit('Registro eliminado');break;
     }
     case 'assistant-voice':startVoiceQuestion();break;
+    case 'assistant-review-update':{
+      const text=modalRoot.querySelector<HTMLTextAreaElement>('#assistant-review-text')?.value??'';
+      const store=modalRoot.querySelector<HTMLInputElement>('#assistant-review-store')?.value.trim()??'';
+      const plan=parseVoicePlan(state,text);
+      if(store)plan.store=store;
+      showAssistantReview(text);
+      const storeInput=modalRoot.querySelector<HTMLInputElement>('#assistant-review-store');
+      if(storeInput)storeInput.value=plan.store??'';
+      const list=modalRoot.querySelector<HTMLElement>('.voice-review-list');
+      if(list)list.setAttribute('data-reviewed-store',plan.store??'');
+      break;
+    }
+    case 'assistant-review-save':await saveAssistantReview();break;
     case 'assistant-example':{
       const input=root.querySelector<HTMLInputElement>('#assistant-message');
       if(input){input.value=el.dataset.text??'';input.focus({preventScroll:true});}
@@ -540,7 +588,7 @@ async function submit(form:HTMLFormElement):Promise<void> {
       await commit(message);break;
     }
     case 'form-assistant':{
-      await sendAssistantMessage(str('message'));break;
+      showAssistantReview(str('message'));break;
     }
     case 'form-grocery':{
       const name=str('productName'),qty=num('quantity'),unit=str('unit') as Unit;

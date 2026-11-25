@@ -6,10 +6,10 @@ export function assistantCard(lastReply=''):string {
     ?'<div class="assistant-answer" id="assistant-answer" role="status" aria-live="polite">'+escapeHTML(lastReply)+'</div>'
     :'<div class="assistant-answer" id="assistant-answer" role="status" aria-live="polite" hidden></div>';
   return '<section class="card assistant-card">'
-    +'<div class="section-heading"><h2>'+icon('sparkle',20)+' Actualiza tu despensa</h2><span class="assistant-pill">Despensa</span></div>'
-    +'<p>Apunta lo que tienes, compras o consumes.</p>'
+    +'<div class="section-heading"><h2>'+icon('sparkle',20)+' Háblale a Mi Salud</h2><span class="assistant-pill">Despensa + compras</span></div>'
+    +'<p>Dicta existencias, consumos, compras y precios en el mismo sitio.</p>'
     +'<form id="form-assistant" class="assistant-compose" autocomplete="off">'
-    +'<input name="message" id="assistant-message" maxlength="220" required aria-label="Mensaje para Mi Salud" placeholder="Me queda un huevo…">'
+    +'<textarea name="message" id="assistant-message" maxlength="1600" rows="2" required aria-label="Mensaje para Mi Salud" placeholder="Compra del Mercadona; 500 g de pavo, 4 euros…"></textarea>'
     +'<button type="button" class="btn btn-secondary assistant-mic" data-action="assistant-voice" aria-label="Dictar al asistente">🎙️</button>'
     +'<button type="submit" class="btn btn-primary assistant-send">'+icon('right',18)+' Enviar</button>'
     +'</form>'
@@ -18,6 +18,6 @@ export function assistantCard(lastReply=''):string {
     +'<button type="button" data-action="assistant-example" data-text="He comido un huevo">He comido un huevo</button>'
     +'<button type="button" data-action="assistant-example" data-text="He comprado seis huevos">He comprado seis huevos</button>'
     +'</div>'+status
-    +'<small>Después de dictar, comprueba el texto y pulsa Enviar. No se guarda automáticamente.</small>'
+    +'<small>Puedes dictar varias frases. Pulsa otra vez el micrófono para detener y Enviar para revisar antes de guardar.</small>'
     +'</section>';
 }
