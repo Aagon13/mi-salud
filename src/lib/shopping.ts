@@ -79,11 +79,157 @@ export type QuickCommand =
   | { action:'bought'|'set'|'list'|'consume'; name:string; quantity:number; unit:Unit|null };
 
 const COUNT_WORDS:Record<string,number>={un:1,una:1,uno:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,doce:12};
-const COUNT_TOKEN='(?:\\d+(?:[.,]\\d+)?|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce)';
+const COUNT_TOKEN='(?:\\d+(?:[.,]\\d+)?|una|uno|un|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce)(?=\\s|$)';
 const SIZE_TOKEN='(?:\\d+(?:[.,]\\d+)?)';
 const UNIT_TOKEN='(?:kilogramos?|kilos?|kg|gramos?|grs?\\.?|g|mililitros?|ml|litros?|l)';
 const PACKAGE_TOKEN='(?:bandejas?|paquetes?|packs?|bolsas?|botes?|latas?|botellas?|tarrinas?|cajas?|briks?|tarros?|cartones?)';
-const QUANTITY=new RegExp('^('+COUNT_TOKEN+')\\s*('+UNIT_TOKEN+'|unidades?|ud)?\\s*(?:de\\s+)?(.+)$','iu');
+const QUANTITY=new RegExp('^('+COUNT_TOKEN+')\\s+('+UNIT_TOKEN+'|unidades?|ud)?\\s*(?:de\\s+)?(.+)
+const PACKAGE_SIZE_END=new RegExp('^(?:('+COUNT_TOKEN+')\\s+)?'+PACKAGE_TOKEN+'\\s+de\\s+(.+?)\\s+(?:de\\s+)?('+SIZE_TOKEN+')\\s*('+UNIT_TOKEN+')\\.?$','iu');
+const PACKAGE_SIZE_FIRST=new RegExp('^(?:('+COUNT_TOKEN+')\\s+)?'+PACKAGE_TOKEN+'\\s+de\\s+('+SIZE_TOKEN+')\\s*('+UNIT_TOKEN+')\\s+de\\s+(.+)$','iu');
+const PACKAGE_COUNT=new RegExp('^(?:('+COUNT_TOKEN+')\\s+)?'+PACKAGE_TOKEN+'\\s+de\\s+('+SIZE_TOKEN+')\\s+(?:unidades?\\s+de\\s+)?(.+)$','iu');
+const SIZE_END=new RegExp('^(.+?)\\s+(?:de\\s+)?('+SIZE_TOKEN+')\\s*('+UNIT_TOKEN+')\\.?$','iu');
+function amount(raw:string):number {
+  const key=normalizeName(raw);
+  return COUNT_WORDS[key]??Number(key.replace(',','.'));
+}
+function parseUnit(raw:string):Unit {
+  const key=normalizeName(raw).replace(/\.$/u,'');
+  if(key.startsWith('kg')||key.startsWith('kilo'))return 'kg';
+  if(key.startsWith('gr')||key==='g')return 'g';
+  if(key.startsWith('mili')||key==='ml')return 'ml';
+  if(key.startsWith('l'))return 'l';
+  return 'ud';
+}
+function readQuantity(value:string,required=false):{name:string;quantity:number;unit:Unit|null} {
+  const input=value.trim().replace(/[.!?]+$/u,'').trim();
+  // Un mensaje no se puede tratar como si fuera un solo producto si contiene varias compras.
+  if(/\s+y\s+(?:\d|un(?:a)?\s|dos\s|tres\s)/iu.test(input))
+    throw Error('Registra un producto cada vez para no mezclar cantidades.');
+  let name='',quantity=1,unit:Unit|null=null;
+  let m=input.match(PACKAGE_SIZE_END);
+  if(m){
+    const count=m[1]?amount(m[1]):1;
+    name=m[2];quantity=count*amount(m[3]);unit=parseUnit(m[4]);
+  }else if((m=input.match(PACKAGE_SIZE_FIRST))){
+    const count=m[1]?amount(m[1]):1;
+    name=m[4];quantity=count*amount(m[2]);unit=parseUnit(m[3]);
+  }else if((m=input.match(PACKAGE_COUNT))){
+    const count=m[1]?amount(m[1]):1;
+    name=m[3];quantity=count*amount(m[2]);unit='ud';
+  }else if((m=input.match(SIZE_END))){
+    name=m[1];quantity=amount(m[2]);unit=parseUnit(m[3]);
+  }else if((m=input.match(QUANTITY))){
+    quantity=amount(m[1]);unit=m[2]?parseUnit(m[2]):null;name=m[3];
+    if(new RegExp('^'+PACKAGE_TOKEN+'\\s+de\\s+','iu').test(name))
+      throw Error('Indica el peso o la cantidad del envase; por ejemplo «una bandeja de pavo de 500 g».');
+  }else{
+    if(required)throw Error('Indica cuántas unidades o qué cantidad queda.');
+    name=input;
+  }
+  name=cleanName(name);
+  if(!name||name.length>80||!Number.isFinite(quantity)||quantity<0||quantity>100000)
+    throw Error('Revisa el nombre y la cantidad del producto.');
+  return {name,quantity,unit};
+}
+
+/** Frases habituales que también se pueden dictar con el micrófono del teclado. */
+export function parseQuickCommand(text:string):QuickCommand {
+  const raw=text.trim();
+  const out=raw.match(/^(?:(?:se\s+me\s+ha[n]?|se\s+ha[n]?)\s+(?:terminado|acabado)|(?:no\s+me\s+queda[n]?|ya\s+no\s+tengo|no\s+tengo|no\s+queda[n]?|me\s+he\s+quedado\s+sin|se\s+acab[oó]))\s+(.+)$/iu);
+  if(out){
+    const name=cleanName(out[1]);
+    if(!name||name.length>80)throw Error('Nombre de producto no válido.');
+    return {action:'out',name};
+  }
+  const remove=raw.match(/^(?:borra|elimina|quita[r]?|retira[r]?)\s+(.+?)\s+de\s+(?:casa|la\s+despensa)$/iu)
+    ||raw.match(/^(?:borra|elimina|quita[r]?\s+de\s+(?:casa|la\s+despensa)|retira[r]?\s+de\s+(?:casa|la\s+despensa))\s+(.+)$/iu)
+    ||raw.match(/^(?:borra|elimina)\s+(.+)$/iu);
+  if(remove)return {action:'remove',name:cleanName(remove[1])};
+  const consume=raw.match(/^(?:me\s+he\s+comido|me\s+com[ií]|he\s+comido|he\s+usado|he\s+consumido|he\s+tirado|descuenta|resta|r[eé]stame)\s+(.+)$/iu);
+  if(consume)return {action:'consume',...readQuantity(consume[1],true)};
+  const bought=raw.match(/^(?:he\s+comprado|compr[eé]|he\s+pillado|he\s+tra[ií]do)\s+(.+)$/iu);
+  if(bought){
+    const parsed=readQuantity(bought[1],true);
+    if(parsed.quantity<=0)throw Error('Indica cuánto has comprado.');
+    return {action:'bought',...parsed};
+  }
+  const stock=raw.match(/^(?:me\s+queda[n]?|tengo|quedan|ahora\s+tengo)\s+(.+)$/iu);
+  if(stock) return {action:'set',...readQuantity(stock[1],true)};
+  const shopping=raw.match(/^(?:(?:apunta|pon|a[nñ]ade|agrega|mete)\s+|(?:me\s+falta[n]?|necesito|hay\s+que\s+comprar)\s+)(.+)$/iu);
+  if(shopping){
+    const value=shopping[1].replace(/\s+(?:a|en|para)\s+(?:la\s+)?(?:lista\s+de\s+)?(?:la\s+)?compra$/iu,'');
+    return {action:'list',...readQuantity(value)};
+  }
+  throw Error('Prueba «Me quedan 3 huevos», «Se acabó la leche», «He comprado 2 litros de leche» o «Apunta arroz a la compra».');
+}
+
+export function consumePantry(s:AppData,name:string,quantity:number,unit:Unit|null):string {
+  if(!Number.isFinite(quantity)||quantity<=0)throw Error('Indica cuánto has usado.');
+  const matches=s.pantry.filter(p=>productKey(p.name)===productKey(cleanName(name)));
+  if(!matches.length)throw Error('No encuentro «'+name+'» en tu despensa.');
+  const existing=matches.find(p=>!unit||joinKey(p.name,p.unit)===joinKey(name,unit));
+  if(!existing)throw Error('La unidad no coincide con la que tienes.');
+  const same=matches.filter(p=>joinKey(p.name,p.unit)===joinKey(existing.name,existing.unit));
+  const available=same.reduce((n,p)=>n+toBase(p.quantity,p.unit),0);
+  const used=toBase(quantity,unit??existing.unit);
+  if(used>available+1e-8)throw Error('Solo tienes '+(available/toBase(1,existing.unit))+' '+existing.unit+' de '+existing.name+'.');
+  existing.quantity=Math.max(0,(available-used)/toBase(1,existing.unit));
+  existing.updatedAt=new Date().toISOString();
+  const ids=new Set(same.filter(p=>p.id!==existing.id).map(p=>p.id));
+  s.pantry=s.pantry.filter(p=>!ids.has(p.id));
+  return existing.name;
+}
+export function removeFromPantry(s:AppData,id:string):string {
+  const item=s.pantry.find(p=>p.id===id);
+  if(!item)throw Error('El producto ya no está en casa.');
+  s.pantry=s.pantry.filter(p=>p.id!==id);
+  return item.name;
+}
+export function applyQuickCommand(s:AppData,text:string):string {
+  const cmd=parseQuickCommand(text);
+  if(cmd.action==='out')return markOut(s,cmd.name)+' agotado y apuntado a la compra';
+  if(cmd.action==='remove'){
+    const matches=s.pantry.filter(p=>productKey(p.name)===productKey(cmd.name));
+    if(!matches.length)throw Error('Ese producto no está en casa.');
+    const ids=new Set(matches.map(p=>p.id));
+    s.pantry=s.pantry.filter(p=>!ids.has(p.id));
+    return cmd.name+' eliminado de casa';
+  }
+  const matches=s.pantry.filter(p=>productKey(p.name)===productKey(cmd.name));
+  const existing=matches.find(p=>normalizeName(p.name)===normalizeName(cmd.name))??matches[0];
+  const unit=cmd.unit??existing?.unit??'ud';
+  if(cmd.action==='list'){
+    const old=s.groceries.find(x=>joinKey(x.name,x.unit)===joinKey(cmd.name,unit));
+    if(old)old.quantity=Math.max(old.quantity,cmd.quantity);
+    else s.groceries.push({id:crypto.randomUUID(),name:existing?.name??cmd.name,quantity:Math.max(cmd.quantity,1),unit});
+    return (existing?.name??cmd.name)+' apuntado a la compra';
+  }
+  if(cmd.action==='consume'){
+    const name=consumePantry(s,cmd.name,cmd.quantity,unit);
+    const remaining=s.pantry.find(p=>productKey(p.name)===productKey(name));
+    return 'Consumidos '+cmd.quantity+' '+unit+' de '+name+'. Quedan '+(remaining?.quantity??0)+' '+(remaining?.unit??unit);
+  }
+  if(cmd.action==='set'){
+    if(existing){
+      if(joinKey(existing.name,existing.unit)!==joinKey(cmd.name,unit))
+        throw Error('La unidad no coincide con la que tienes. Cámbiala desde Editar.');
+      existing.quantity=toBase(cmd.quantity,unit)/toBase(1,existing.unit);
+      existing.updatedAt=new Date().toISOString();
+      const ids=new Set(matches.filter(p=>p.id!==existing.id&&joinKey(p.name,p.unit)===joinKey(existing.name,existing.unit)).map(p=>p.id));
+      s.pantry=s.pantry.filter(p=>!ids.has(p.id));
+    }else{
+      addToPantry(s,cmd.name,cmd.quantity,unit);
+      const added=s.pantry.find(p=>joinKey(p.name,p.unit)===joinKey(cmd.name,unit));
+      if(added){added.habitual=true;added.minStock=1;added.restockQuantity=Math.max(1,cmd.quantity);}
+    }
+    return 'Ahora tienes '+cmd.quantity+' '+unit+' de '+(existing?.name??cmd.name);
+  }
+  if(cmd.quantity<=0)throw Error('Indica cuánto has comprado.');
+  purchase(s,cmd.name,cmd.quantity,unit);
+  const updated=s.pantry.find(p=>joinKey(p.name,p.unit)===joinKey(cmd.name,unit));
+  return 'Añadidos '+cmd.quantity+' '+unit+' de '+(updated?.name??cmd.name);
+}
+,'iu');
 const PACKAGE_SIZE_END=new RegExp('^(?:('+COUNT_TOKEN+')\\s+)?'+PACKAGE_TOKEN+'\\s+de\\s+(.+?)\\s+(?:de\\s+)?('+SIZE_TOKEN+')\\s*('+UNIT_TOKEN+')\\.?$','iu');
 const PACKAGE_SIZE_FIRST=new RegExp('^(?:('+COUNT_TOKEN+')\\s+)?'+PACKAGE_TOKEN+'\\s+de\\s+('+SIZE_TOKEN+')\\s*('+UNIT_TOKEN+')\\s+de\\s+(.+)$','iu');
 const PACKAGE_COUNT=new RegExp('^(?:('+COUNT_TOKEN+')\\s+)?'+PACKAGE_TOKEN+'\\s+de\\s+('+SIZE_TOKEN+')\\s+(?:unidades?\\s+de\\s+)?(.+)$','iu');
