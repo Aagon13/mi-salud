@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { processAssistantMessage } from '../dist/assets/lib/assistant.js';
 import { registerPurchase, askBuyingAdvice } from '../dist/assets/lib/buyingAdvice.js';
 import assert from 'node:assert/strict';
 import { initialData,missions,routines } from '../dist/assets/data/seed.js';
@@ -145,4 +146,26 @@ test('Evita unidades incompatibles y precios negativos',()=>{
  registerPurchase(s,{id:'x',date:'2026-11-20',product:'Pollo',store:'Lidl',quantity:1,unit:'ud',totalPrice:5,quality:4},false);
  registerPurchase(s,{id:'y',date:'2026-11-21',product:'Pollo',store:'Aldi',quantity:1,unit:'kg',totalPrice:8,quality:5},false);
  assert.equal(askBuyingAdvice(s,'polLo').bestValue,undefined);
+});
+
+test('El asistente unifica inventario y consulta de precios sin alterar datos al preguntar',()=>{
+ const s=initialData();
+ const stock=processAssistantMessage(s,'Me quedan 3 huevos');
+ assert.equal(stock.changed,true);
+ assert.equal(s.pantry[0].quantity,3);
+ const listing=processAssistantMessage(s,'Apunta leche a la compra');
+ assert.equal(listing.changed,true);
+ assert.equal(shoppingList(s).some(x=>x.name==='leche'),true);
+ const before=s.pantry.length;
+ const ask=processAssistantMessage(s,'¿Dónde compro mejor el pollo?');
+ assert.equal(ask.changed,false);
+ assert.match(ask.reply,/Todavía no/);
+ assert.equal(s.pantry.length,before);
+});
+test('El asistente no modifica datos ante una frase desconocida',()=>{
+ const s=initialData();
+ assert.throws(()=>processAssistantMessage(s,'holi'),/Prueba/);
+ assert.equal(s.pantry.length,0);
+ assert.throws(()=>processAssistantMessage(s,'He comprado 0 litros de leche'),/Indica|cantidad/);
+ assert.equal(s.pantry.length,0);
 });
