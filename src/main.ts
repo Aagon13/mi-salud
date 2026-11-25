@@ -244,6 +244,7 @@ async function viewReceipt(id:string):Promise<void>{
   if(ticket.status==='pending'){
     openReceipt();
     activeReceiptId=id;
+    selectedReceiptFile=new File([existing],'ticket-archivado.jpg',{type:'image/jpeg'});
     modalRoot.querySelector<HTMLInputElement>('#receipt-store')!.value=ticket.store;
     modalRoot.querySelector<HTMLTextAreaElement>('#receipt-reviewed')!.value=ticket.reviewedText;
     modalRoot.querySelector<HTMLElement>('#receipt-raw')!.textContent=ticket.ocrText||'No hay texto OCR guardado.';
