@@ -11,9 +11,10 @@ import { toggleMission, levelInfo, totalXP } from './lib/progress.js';
 import { addToPantry, cookRecipe, enoughForRecipe, computeCoverage } from './lib/planner.js';
 import { applyQuickCommand, markOut, purchase, shoppingList } from './lib/shopping.js';
 import { parseReceiptText, parseReviewedReceipt } from './lib/receipt.js';
+import { askBuyingAdvice, registerPurchase } from './lib/buyingAdvice.js';
 import { escapeHTML as esc, optUnits, positive, uid, shrinkPhoto, normalizeName, joinKey } from './lib/helpers.js';
 import { icon } from './ui/icons.js';
-import type { AppData, Ingredient, Recipe, Unit } from './types.js';
+import type { AppData, Ingredient, Recipe, Unit, PurchaseRecord } from './types.js';
 
 const TABS = [
   {id:'home',label:'Hoy',icon:'home'},
@@ -49,10 +50,11 @@ function render(resetScroll=false):void {
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
     <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):health(state)}</main>
-    <footer class="page-footer">Mi Salud · v0.3 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
+    <footer class="page-footer">Mi Salud · v0.4 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
     <nav class="bottom-nav" aria-label="Navegación móvil">${TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
+  if(current==='pantry')showLastAdvice();
 }
 async function commit(message='Guardado'):Promise<void>{
   saving=true;
@@ -83,6 +85,72 @@ function openPantry(id?:string):void{
     <div class="form-pair">${field('Avisarme si tengo menos de',numberField('minStock',p?.minStock??1,'0.01'))}${field('Cantidad que quiero tener',numberField('restockQuantity',p?.restockQuantity??Math.max(p?.quantity??1,1),'0.01'))}</div>
     <p class="note">Ejemplo: mínimo 1 y objetivo 3 → si quedan 0, añade 3; si quedan 0,5, añade 2,5.</p>
     <p class="pantry-form-error" role="alert" aria-live="polite" hidden></p><button class="btn btn-primary btn-wide" type="button" data-action="save-pantry">${icon('save',18)} Guardar producto</button></form>`);
+}
+function openPurchase(id?:string):void{
+  const entry=(state.purchases??[]).find(x=>x.id===id);
+  const stores=[...new Set((state.purchases??[]).map(x=>x.store))];
+  showModal(modalHeading(entry?'Editar compra':'Registrar compra','Apunta qué compraste, dónde y qué te pareció. No hace falta tener un ticket.') +
+    '<form id="form-purchase" class="form-grid" novalidate autocomplete="off">' +
+    '<input name="entryId" type="hidden" value="'+esc(entry?.id??'')+'">' +
+    field('Producto · usa siempre el mismo nombre para compararlo','<input name="product" required maxlength="80" placeholder="Ej. Pechuga de pollo" value="'+esc(entry?.product??'')+'">') +
+    field('Supermercado','<input name="store" required maxlength="80" list="known-stores" placeholder="Ej. Mercadona" value="'+esc(entry?.store??'')+'"><datalist id="known-stores">'+stores.map(x=>'<option value="'+esc(x)+'"></option>').join('')+'</datalist>') +
+    field('Fecha','<input type="date" name="date" required value="'+esc(entry?.date??localDate())+'">') +
+    '<div class="form-pair">'+field('Cantidad',numberField('quantity',entry?.quantity??1,'0.01'))+field('Unidad','<select name="unit">'+optUnits(entry?.unit??'kg')+'</select>')+'</div>' +
+    field('Precio total pagado (€) · opcional','<input name="totalPrice" type="number" min="0.01" step="any" inputmode="decimal" placeholder="Ej. 4,70" value="'+esc(entry?.totalPrice??'')+'">') +
+    field('Calidad para ti (opcional)','<select name="quality"><option value="">Sin valorar</option>'+[1,2,3,4,5].map(i=>'<option value="'+i+'" '+(entry?.quality===i?'selected':'')+'>'+i+'/5'+(i===5?' · Excelente':i===1?' · Mala':'')+'</option>').join('')+'</select>') +
+    field('Tu experiencia (opcional)','<textarea name="note" maxlength="350" rows="3" placeholder="Ej. Más jugoso; repetiría">'+esc(entry?.note??'')+'</textarea>') +
+    (entry?'':'<label class="habitual-toggle"><input type="checkbox" name="addStock"><span><b>También sumarlo a mi despensa</b><small>Desmárcalo si estás registrando una compra antigua o de prueba.</small></span></label>') +
+    '<p class="purchase-error" role="alert" aria-live="polite" hidden></p>' +
+    '<button type="button" data-action="save-purchase" class="btn btn-primary btn-wide">Guardar compra y valoración</button></form>');
+}
+async function savePurchase():Promise<void>{
+  const form=modalRoot.querySelector<HTMLFormElement>('#form-purchase');
+  if(!form)throw Error('No se encontró el formulario de compra.');
+  const fd=new FormData(form),str=(k:string)=>String(fd.get(k)??'').trim();
+  const parseOptional=(k:string)=>{const v=str(k);return v===''?undefined:Number(v.replace(',','.'));};
+  const entry:PurchaseRecord={id:str('entryId')||uid(),date:str('date'),product:str('product'),store:str('store'),
+    quantity:Number(str('quantity').replace(',','.')),unit:str('unit') as Unit,totalPrice:parseOptional('totalPrice'),
+    quality:parseOptional('quality'),note:str('note')};
+  // Validar en una copia temporal antes de modificar el historial real.
+  const previous=(state.purchases??[]).find(x=>x.id===entry.id);
+  const temp:AppData={...state,purchases:[],pantry:[],groceries:[]};
+  registerPurchase(temp,entry,false);
+  if(previous){
+    state.purchases=(state.purchases??[]).map(x=>x.id===entry.id?entry:x);
+  } else registerPurchase(state,entry,fd.has('addStock'));
+  closeModal();await commit(previous?'Compra actualizada':'Compra y valoración guardadas');
+}
+let lastAdvice='';
+function askFromPantry():void{
+  const input=root.querySelector<HTMLInputElement>('#buying-question');
+  if(!input)throw Error('No se encuentra la pregunta.');
+  const result=askBuyingAdvice(state,input.value);
+  lastAdvice=result.answer;
+  const panel=root.querySelector<HTMLElement>('#buying-answer');
+  if(panel){panel.textContent=lastAdvice;panel.hidden=false;}
+}
+function showLastAdvice():void{
+  if(!lastAdvice)return;
+  const panel=root.querySelector<HTMLElement>('#buying-answer');
+  if(panel){panel.textContent=lastAdvice;panel.hidden=false;}
+}
+type BrowserSpeechResult={results:ArrayLike<ArrayLike<{transcript:string}>>};
+type BrowserRecognizer={lang:string;interimResults:boolean;maxAlternatives:number;onresult:((e:BrowserSpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;start:()=>void};
+function startVoiceQuestion():void{
+  const speechWindow=window as Window & {SpeechRecognition?:new()=>BrowserRecognizer;webkitSpeechRecognition?:new()=>BrowserRecognizer};
+  const Recognition=speechWindow.SpeechRecognition??speechWindow.webkitSpeechRecognition;
+  if(!Recognition){toast('El dictado directo no está disponible en este navegador. Usa el micrófono del teclado.',true);return;}
+  const input=root.querySelector<HTMLInputElement>('#buying-question');
+  if(!input)return;
+  const recognizer=new Recognition();recognizer.lang='es-ES';recognizer.interimResults=false;recognizer.maxAlternatives=1;
+  recognizer.onresult=e=>{
+    input.value=e.results[0]?.[0]?.transcript??'';
+    if(input.value)askFromPantry();
+  };
+  recognizer.onerror=e=>toast('No se pudo escuchar: '+e.error,true);
+  recognizer.onend=()=>{};
+  try{recognizer.start();toast('Escuchando tu pregunta…');}
+  catch{toast('No se pudo iniciar el micrófono. Prueba el del teclado.',true);}
 }
 function openReceipt():void{
   showModal(modalHeading('Importar ticket','Fotografía de cualquier supermercado. Revisa los artículos antes de guardar.') +
@@ -215,6 +283,25 @@ async function act(action:string,el:HTMLElement):Promise<void>{
     case 'go':current=(TABS.find(t=>t.id===el.dataset.tab)?.id??'home');closeModal();render(true);break;
     case 'toggle-mission':{if(!missions.some(x=>x.id===id))return;toggleMission(state,localDate(),id);await commit('Progreso actualizado');break;}
     case 'new-pantry':openPantry();break;
+    case 'new-purchase':openPurchase();break;
+    case 'edit-purchase':openPurchase(id);break;
+    case 'save-purchase':{
+      try{await savePurchase();}
+      catch(err){const message=err instanceof Error?err.message:'No se pudo guardar la compra.';
+        const warning=modalRoot.querySelector<HTMLElement>('.purchase-error');
+        if(warning){warning.textContent=message;warning.hidden=false;}
+        toast(message,true);}
+      break;
+    }
+    case 'delete-purchase':{
+      const item=(state.purchases??[]).find(x=>x.id===id);
+      if(!item)return;
+      if(!window.confirm('¿Eliminar el registro de '+item.product+' en '+item.store+'? No se cambiarán las existencias de la despensa.'))return;
+      state.purchases=(state.purchases??[]).filter(x=>x.id!==id);
+      await commit('Registro eliminado');break;
+    }
+    case 'ask-buying':askFromPantry();break;
+    case 'voice-buying':startVoiceQuestion();break;
     case 'open-receipt':openReceipt();break;
     case 'scan-receipt':await scanReceipt();break;
     case 'save-receipt':await saveReceipt();break;
