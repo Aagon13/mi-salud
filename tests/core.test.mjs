@@ -6,7 +6,7 @@ import { initialData,missions,routines } from '../dist/assets/data/seed.js';
 import { levelInfo, toggleMission,totalXP,isMissionDone } from '../dist/assets/lib/progress.js';
 import { computeCoverage,addToPantry,cookRecipe,enoughForRecipe } from '../dist/assets/lib/planner.js';
 import { isValidBackup } from '../dist/assets/lib/storage.js';
-import { shoppingList, markOut, purchase, parseQuickCommand, applyQuickCommand } from '../dist/assets/lib/shopping.js';
+import { shoppingList, markOut, purchase, parseQuickCommand, applyQuickCommand, consumePantry, removeFromPantry } from '../dist/assets/lib/shopping.js';
 import { weekStart,addDays } from '../dist/assets/lib/dates.js';
 import { parseReceiptText,parseReviewedReceipt } from '../dist/assets/lib/receipt.js';
 
@@ -168,4 +168,37 @@ test('El asistente no modifica datos ante una frase desconocida',()=>{
  assert.equal(s.pantry.length,0);
  assert.throws(()=>processAssistantMessage(s,'He comprado 0 litros de leche'),/Indica|cantidad/);
  assert.equal(s.pantry.length,0);
+});
+
+test('Me queda un huevo fija 1 aunque antes hubiese tres huevos',()=>{
+ const s=initialData();applyQuickCommand(s,'Me quedan 3 huevos');
+ assert.equal(s.pantry.length,1);
+ const r=processAssistantMessage(s,'Me queda un huevo');
+ assert.equal(r.changed,true);assert.equal(s.pantry.length,1);assert.equal(s.pantry[0].quantity,1);
+});
+test('He comido un huevo resta, no crea otro artículo',()=>{
+ const s=initialData();applyQuickCommand(s,'Me quedan 3 huevos');
+ processAssistantMessage(s,'He comido un huevo');
+ assert.equal(s.pantry.length,1);assert.equal(s.pantry[0].quantity,2);
+ assert.throws(()=>processAssistantMessage(s,'He comido tres huevos'),/Solo tienes/);
+ assert.equal(s.pantry[0].quantity,2);
+});
+test('He comprado seis huevos suma sobre huevo singular',()=>{
+ const s=initialData();applyQuickCommand(s,'Me queda un huevo');
+ applyQuickCommand(s,'He comprado seis huevos');
+ assert.equal(s.pantry.length,1);assert.equal(s.pantry[0].quantity,7);
+});
+test('Quitar de casa elimina sin marcar agotado',()=>{
+ const s=initialData();applyQuickCommand(s,'Me quedan 3 huevos');
+ applyQuickCommand(s,'Quitar huevos de casa');
+ assert.equal(s.pantry.length,0);assert.equal(s.groceries.length,0);
+ applyQuickCommand(s,'Me quedan 2 huevos');
+ removeFromPantry(s,s.pantry[0].id);
+ assert.equal(s.pantry.length,0);
+});
+test('Cantidades explícitas consolidan duplicados antiguos huevo y huevos',()=>{
+ const s=initialData();
+ s.pantry.push({id:'a',name:'Huevos',quantity:3,unit:'ud',updatedAt:''},{id:'b',name:'Huevo',quantity:1,unit:'ud',updatedAt:''});
+ processAssistantMessage(s,'Me queda un huevo');
+ assert.equal(s.pantry.length,1);assert.equal(s.pantry[0].quantity,1);
 });

@@ -103,8 +103,9 @@ export function parseQuickCommand(text:string):QuickCommand {
     if(!name||name.length>80)throw Error('Nombre de producto no válido.');
     return {action:'out',name};
   }
-  const remove=raw.match(/^(?:borra|elimina|quita\s+de\s+(?:casa|la\s+despensa)|retira\s+de\s+(?:casa|la\s+despensa))\s+(.+)$/iu)
-    ||raw.match(/^(?:borra|elimina)\s+(.+?)\s+de\s+(?:casa|la\s+despensa)$/iu);
+  const remove=raw.match(/^(?:borra|elimina|quita[r]?|retira[r]?)\s+(.+?)\s+de\s+(?:casa|la\s+despensa)$/iu)
+    ||raw.match(/^(?:borra|elimina|quita[r]?\s+de\s+(?:casa|la\s+despensa)|retira[r]?\s+de\s+(?:casa|la\s+despensa))\s+(.+)$/iu)
+    ||raw.match(/^(?:borra|elimina)\s+(.+)$/iu);
   if(remove)return {action:'remove',name:cleanName(remove[1])};
   const consume=raw.match(/^(?:me\s+he\s+comido|me\s+com[ií]|he\s+comido|he\s+usado|he\s+consumido|he\s+tirado|descuenta|resta|r[eé]stame)\s+(.+)$/iu);
   if(consume)return {action:'consume',...readQuantity(consume[1],true)};

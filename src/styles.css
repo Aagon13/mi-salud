@@ -108,3 +108,12 @@ details summary{cursor:pointer;font-size:12px;color:#b9d0dd}
 .receipt-history-icon{background:#1d3c46;color:#8be5d2;border-radius:12px;padding:11px;flex-shrink:0}
 .receipt-preview{display:block;max-height:58vh;width:100%;object-fit:contain;background:#091320;border-radius:12px;margin:10px 0 14px;border:1px solid #395266}
 .receipt-preview[hidden]{display:none}
+
+/* Despensa v0.8: operaciones de inventario claras y sin texto excesivo */
+.pantry-row-actions{display:flex;align-items:center;gap:2px;flex-shrink:0}
+.pantry-row-actions .icon-btn{width:34px;min-width:34px;height:36px;padding:7px}
+.pantry-row-actions .pantry-adjust{color:#a6e9d2}
+.pantry-advanced{padding:11px 13px;border:1px solid var(--line);border-radius:12px}
+.pantry-advanced summary{cursor:pointer;font-size:13px;color:#b7d6e0}
+.pantry-advanced .form-pair{margin-top:14px}
+@media(max-width:460px){.pantry-row-actions{gap:0}.pantry-row-actions .icon-btn{width:30px;min-width:30px;padding:5px}.stock-row{gap:6px}}
