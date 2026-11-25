@@ -48,7 +48,7 @@ function parseFragment(raw:string):VoiceItem {
 }
 function segments(text:string):string[]{
  const input=text
-   .replace(/(?:€|euros?)\s+(?=(?:\d+(?:[.,]\d+)?|un|una|dos|tres)\s+(?:kg|gr|gramos?|litros?|l|ml|bandeja|paquete|huevo|pollo|pavo))/giu,match=>match+'; ')
+   .replace(/(?:€|euros?)\s*,?\s+(?=(?:\d+(?:[.,]\d+)?|un|una|dos|tres)\s*(?:kg|kilos?|gr|gramos?|litros?|l|ml|bandeja|paquete|huevo|pollo|pavo))/giu,match=>match.replace(/,\s*$/u,'').trim()+'; ')
    .replace(/\s+y\s+(?=(?:he\s+comprado|compr[eé]|me\s+queda|no\s+tengo|he\s+comido|me\s+he\s+comido|apunta|\d+\s+(?:kg|gr|gramos?|litros?|ml|ud|unidades?)|una?\s+(?:bandeja|paquete|caja)))/giu,'; ');
  return input.split(/\s*;\s*|,\s+(?=(?:he\s+comprado|me\s+queda|tengo\s+|no\s+tengo|apunta|\d+\s*(?:kg|gr|gramos?|ml|litros?|bandejas?|paquetes?)|una?\s+(?:kilos?|litros?|gramos?|bandeja|paquete|caja|botella|lata|bolsa)))|\.\s+(?=\p{L}|\d)|\n+/iu).map(s=>s.trim()).filter(Boolean);
 }
