@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { parseVoicePlan, applyVoicePlan } from '../dist/assets/lib/unifiedAssistant.js';
 import { processAssistantMessage } from '../dist/assets/lib/assistant.js';
 import { expenses } from '../dist/assets/screens/expenses.js';
 import { pantry } from '../dist/assets/screens/pantry.js';
@@ -251,4 +252,55 @@ test('No guarda bandejas sin cantidad verificable ni combina dos compras en una'
  assert.throws(()=>processAssistantMessage(s,'He comprado una bandeja de pavo'),/peso|cantidad/);
  assert.throws(()=>processAssistantMessage(s,'He comprado una bandeja de pavo de 500 gr y un litro de leche'),/producto cada vez/);
  assert.equal(s.pantry.length,0);
+});
+
+test('Asistente único: supermercado, cantidad, precio y actualización de despensa',()=>{
+ const data=initialData();
+ const plan=parseVoicePlan(data,'Compra del Mercadona; 500 gr de pavo me ha costado 4 euros; 1kg de pollo 6,50 euros');
+ assert.equal(plan.store,'Mercadona');
+ assert.equal(plan.items.length,2);
+ assert.deepEqual(plan.items.map(x=>[x.command.name,x.command.quantity,x.command.unit,x.totalPrice]),[
+   ['pavo',500,'g',4],['pollo',1,'kg',6.5]
+ ]);
+ applyVoicePlan(data,plan);
+ assert.equal(data.shoppingStore,'Mercadona');
+ assert.equal(data.purchases.length,2);
+ assert.equal(data.purchases[0].totalPrice,4);
+ assert.equal(data.purchases[1].totalPrice,6.5);
+ assert.equal(data.pantry.length,2);
+ assert.equal(data.pantry[0].quantity,500);
+});
+test('Asistente único: recuerda la tienda, no inventa precios y admite existencias',()=>{
+ const data=initialData();
+ applyVoicePlan(data,parseVoicePlan(data,'Compra del Lidl'));
+ assert.equal(data.shoppingStore,'Lidl');
+ const plan=parseVoicePlan(data,'una bandeja de salchichas; me quedan tres huevos; se me ha terminado la leche');
+ assert.equal(plan.items.length,3);
+ applyVoicePlan(data,plan);
+ assert.equal(data.purchases.length,1);
+ assert.equal(data.purchases[0].product,'salchichas');
+ assert.equal(data.purchases[0].totalPrice,undefined);
+ assert.equal(data.pantry.find(x=>x.name==='huevos').quantity,3);
+ assert.equal(data.pantry.find(x=>x.name==='leche').quantity,0);
+});
+test('Asistente único: no registra precio sin supermercado ni guarda cambios parciales',()=>{
+ const data=initialData();
+ const plan=parseVoicePlan(data,'He comprado 500 gramos de pavo por 4 euros');
+ assert.throws(()=>applyVoicePlan(data,plan),/supermercado/);
+ assert.equal(data.pantry.length,0);
+ assert.equal(data.purchases,undefined);
+ const bad=parseVoicePlan(data,'Me quedan tres huevos; he comido cuatro huevos');
+ assert.throws(()=>applyVoicePlan(data,bad),/Solo tienes/);
+ assert.equal(data.pantry.length,0);
+});
+test('Asistente único: acepta compra de varios productos y evita inventar el peso de un envase',()=>{
+ const data=initialData();
+ const plan=parseVoicePlan(data,'Compra del Mercadona, 500 gr pavo me ha costado 4€, un kilo de pollo 6 euros');
+ assert.equal(plan.items.length,2);
+ assert.equal(plan.items[0].command.name,'pavo');
+ assert.equal(plan.items[1].command.name,'pollo');
+ const pack=parseVoicePlan(data,'He comprado una bandeja de salchichas');
+ assert.equal(pack.items[0].command.quantity,1);
+ assert.equal(pack.items[0].command.unit,'ud');
+ assert.equal(pack.items[0].label,'bandeja');
 });
