@@ -68,6 +68,7 @@ function render(resetScroll=false):void {
     <nav class="bottom-nav" aria-label="Navegación móvil">${MOBILE_TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
+  if(lastAssistantReply){const panel=root.querySelector<HTMLElement>('#assistant-answer');if(panel){panel.textContent=lastAssistantReply;panel.hidden=false;}}
 }
 async function commit(message='Guardado'):Promise<void>{
   saving=true;
