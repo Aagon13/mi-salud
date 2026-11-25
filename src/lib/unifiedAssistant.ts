@@ -31,7 +31,7 @@ function parseFragment(raw:string):VoiceItem {
  }
  if(totalPrice!==undefined&&(!Number.isFinite(totalPrice)||totalPrice<=0||totalPrice>100000))
    throw Error('El precio debe ser mayor que cero y válido.');
- text=text.replace(/[\s,.]+$/gu,'').trim();
+ text=text.replace(/(\d)(kg|gr|g|ml|l)\b/giu,'$1 $2').replace(/[\s,.]+$/gu,'').trim();
  let command:QuickCommand;
  const fallback=text.match(packageCount);
  if(fallback){
