@@ -34,3 +34,23 @@
 #receipt-reviewed{font-family:ui-monospace,monospace;min-height:150px}
 details summary{cursor:pointer;font-size:12px;color:#b9d0dd}
 @media(max-width:720px){.pantry-toolbar .btn{font-size:12px}}
+
+/* Asistente de compras e historial */
+.buying-card,.purchase-history-card{margin:16px 0;border-color:#385c61}
+.buying-card p,.purchase-history-card p{color:var(--muted);font-size:12px}
+.buying-card small{display:block;color:var(--muted);font-size:11px;margin-top:9px}
+.buying-controls{display:flex;gap:8px;align-items:stretch;margin-top:12px;flex-wrap:wrap}
+.buying-controls input{flex:1 1 180px;min-width:0;padding:12px;background:#101b2b;border:1px solid #41616b;border-radius:11px;color:var(--text);font-size:16px}
+.buying-controls .btn{flex:0 0 auto}
+.buying-answer{white-space:pre-wrap;border:1px solid #47695b;background:#162c30;border-radius:12px;padding:15px;line-height:1.65;font-size:13px;color:#e3f3eb;margin-top:13px}
+.buying-answer[hidden]{display:none}
+.purchase-history-card .section-heading{flex-wrap:wrap}
+.purchase-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#162b35;border-radius:11px;padding:12px;margin:10px 0}
+.purchase-summary b{font-size:22px;color:#b6f9d6}
+.purchase-summary span{font-size:11px;color:var(--muted)}
+.purchase-history-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.purchase-history-row:last-child{border-bottom:0}
+.purchase-history-row .stock-info{flex:1;min-width:0}
+.purchase-history-row .stock-info small{display:block;margin-top:3px}
+.purchase-error:not([hidden]){color:#ffd1d1;background:#562332;padding:10px;border-radius:8px}
+@media(max-width:440px){.buying-controls input{flex-basis:100%}.buying-controls .btn:last-child{flex:1}}

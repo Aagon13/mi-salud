@@ -3,7 +3,7 @@ import { escapeHTML, pretty } from '../lib/helpers.js';
 import { shoppingList } from '../lib/shopping.js';
 import { computeCoverage } from '../lib/planner.js';
 import { currentWeek } from '../lib/dates.js';
-import { monthSpending, askBuyingAdvice } from '../lib/buyingAdvice.js';
+import { monthSpending } from '../lib/buyingAdvice.js';
 import type { AppData } from '../types.js';
 
 export function pantry(s:AppData):string {
@@ -14,8 +14,6 @@ export function pantry(s:AppData):string {
   const monthly=monthSpending(s,today);
   const money=(n:number)=>n.toLocaleString('es-ES',{style:'currency',currency:'EUR'});
   const sample=purchases.length?'¿Dónde compro mejor '+purchases[0].product+'?':'¿Dónde compro mejor el pollo?';
-  const badgeHtml=(text:string)=>'<span class="best-value-label">'+escapeHTML(text)+'</span>';
-  const adviceExample=purchases.length?askBuyingAdvice(s,sample):null;
   return `<section class="page-intro"><div class="eyebrow">ALIMENTACIÓN</div><h1>Mi despensa</h1><p>Lo que tienes en casa y lo que necesitas reponer, siempre al día.</p></section>
     <div class="card quick-pantry-card"><div class="section-heading"><h2>Apúntalo en segundos</h2>${pill('Rápido','green')}</div>
       <form id="form-pantry-quick" class="quick-pantry-form"><input name="phrase" maxlength="140" required autocomplete="off" aria-label="Escribe o dicta un movimiento de despensa" placeholder="Se me ha terminado la leche"><button class="btn btn-primary" type="submit">${icon('check',17)} Apuntar</button></form>
@@ -38,7 +36,6 @@ export function pantry(s:AppData):string {
       <p>Indica el supermercado, cuánto pagaste y tu valoración de 1 a 5. Así iré aprendiendo qué productos prefieres.</p>
       ${purchases.length===0?`<div class="empty-sm"><p>Sin compras registradas todavía. Puedes empezar sin ticket: registra el mismo producto en dos supermercados y compáralos.</p></div>`:
       purchases.slice(0,25).map(entry=>`<div class="purchase-history-row"><div class="stock-info"><b>${escapeHTML(entry.product)}</b><small>${escapeHTML(entry.store)} · ${entry.date} · ${pretty(entry.quantity)} ${entry.unit} · ${entry.totalPrice===undefined?"Sin precio":money(entry.totalPrice)}${entry.quality===undefined?"":" · ⭐ "+entry.quality+"/5"}</small>${entry.note?`<small>${escapeHTML(entry.note)}</small>`:""}</div><button class="icon-btn" data-action="edit-purchase" data-id="${escapeHTML(entry.id)}" aria-label="Editar compra">${icon("edit",17)}</button><button class="icon-btn danger" data-action="delete-purchase" data-id="${escapeHTML(entry.id)}" aria-label="Eliminar compra">${icon("trash",17)}</button></div>`).join("")}
-      }
       ${purchases.length>25?`<p class="note">Mostrando las 25 compras más recientes de ${purchases.length}.</p>`:""}
     </section>
     <div class="toolbar pantry-toolbar"><button class="btn btn-primary" data-action="new-pantry">${icon('plus',17)} Añadir producto</button><button class="btn btn-secondary" data-action="new-grocery">${icon('list',17)} Apuntar compra</button><button class="btn btn-secondary" data-action="open-receipt">${icon('food',17)} Leer ticket</button></div>
