@@ -74,7 +74,8 @@ export function cleanName(name:string):string {
 }
 
 export type QuickCommand =
-  | { action:'out'|'remove'; name:string }
+  | { action:'out'; name:string }
+  | { action:'remove'; name:string }
   | { action:'bought'|'set'|'list'|'consume'; name:string; quantity:number; unit:Unit|null };
 
 const QUANTITY=/^(\d+(?:[.,]\d+)?|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce)\s*(kg|kilos?|kilogramos?|gramos?|g|litros?|l|mililitros?|ml|unidades?|ud|botellas?|paquetes?|botes?|latas?)?\s*(?:de\s+)?(.+)$/iu;
