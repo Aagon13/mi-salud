@@ -101,7 +101,7 @@ function parseUnit(raw:string):Unit {
   return 'ud';
 }
 function readQuantity(value:string,required=false):{name:string;quantity:number;unit:Unit|null} {
-  const input=value.trim().replace(/[.!?]+$/u,'').trim();
+  const input=value.trim().replace(/[.!?]+$/u,'').trim().replace(/(\d)(?=(?:kg|gr|g|ml|l)\b)/giu,'$1 ');
   // Un mensaje no se puede tratar como si fuera un solo producto si contiene varias compras.
   if(/\s+y\s+(?:\d|un(?:a)?\s|dos\s|tres\s)/iu.test(input))
     throw Error('Registra un producto cada vez para no mezclar cantidades.');
