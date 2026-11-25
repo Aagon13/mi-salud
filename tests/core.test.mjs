@@ -1,7 +1,6 @@
 import test from 'node:test';
 import { parseVoicePlan, applyVoicePlan } from '../dist/assets/lib/unifiedAssistant.js';
 import { processAssistantMessage } from '../dist/assets/lib/assistant.js';
-import { parseVoicePlan, applyVoicePlan } from '../dist/assets/lib/unifiedAssistant.js';
 import { expenses } from '../dist/assets/screens/expenses.js';
 import { pantry } from '../dist/assets/screens/pantry.js';
 import { registerPurchase, askBuyingAdvice } from '../dist/assets/lib/buyingAdvice.js';
