@@ -11,8 +11,12 @@ function dbOpen():Promise<IDBDatabase> {
       if(!req.result.objectStoreNames.contains(STORE))req.result.createObjectStore(STORE);
       if(!req.result.objectStoreNames.contains(PHOTOS))req.result.createObjectStore(PHOTOS);
     };
-    req.onsuccess=()=>resolve(req.result);
-    req.onerror=()=>reject(req.error);
+    // Si otra pestaña conserva abierta la versión anterior, IndexedDB puede
+    // bloquear una actualización y dejar la pantalla en "Cargando..." indefinidamente.
+    let wasBlocked=false;
+    req.onblocked=()=>{wasBlocked=true;reject(Error('La base de datos está bloqueada por otra ventana de Mi Salud. Cierra las otras pestañas o la app abierta en segundo plano y vuelve a intentarlo. No borres los datos.'));};
+    req.onsuccess=()=>{if(wasBlocked)req.result.close();else resolve(req.result);};
+    req.onerror=()=>reject(req.error??Error('No se pudo abrir el almacenamiento local.'));
   });
 }
 async function dbAction<T>(mode:IDBTransactionMode,task:(store:IDBObjectStore,finish:(value:T)=>void)=>void):Promise<T>{
