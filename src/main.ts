@@ -218,7 +218,9 @@ async function act(action:string,el:HTMLElement):Promise<void>{
 }
 async function submit(form:HTMLFormElement):Promise<void> {
   const fd=new FormData(form);const str=(name:string)=>String(fd.get(name)??'').trim();const num=(name:string)=>Number(str(name));
-  switch(form.id){
+  // Consultar el atributo: los campos con name="id" pueden ocultar form.id.
+  const formKind=form.getAttribute('id');
+  switch(formKind){
     case 'form-pantry':{
       const name=str('productName'),qtyText=str('quantity'),qty=Number(qtyText.replace(',','.'));
       const unit=str('unit') as Unit,id=str('id'),habitual=fd.has('habitual');
@@ -292,6 +294,7 @@ async function submit(form:HTMLFormElement):Promise<void> {
       const goalWeight=num('goalWeight');if(goalWeight<25||goalWeight>350)throw Error('Objetivo de peso no válido.');
       state.settings.goalWeight=goalWeight;await commit('Objetivo actualizado');break;
     }
+    default: throw Error('Formulario no reconocido. Actualiza la página e inténtalo de nuevo.');
   }
 }
 
@@ -330,7 +333,7 @@ document.addEventListener('submit',event=>{
   event.preventDefault();if(saving)return;
   void submit(form).catch(err=>{
     const message=err instanceof Error?err.message:'Comprueba los datos';
-    if(form.id==='form-pantry'){
+    if(form.getAttribute('id')==='form-pantry'){
       const error= form.querySelector<HTMLElement>('.pantry-form-error');
       if(error){error.textContent=message;error.hidden=false;error.scrollIntoView({block:'nearest'});}
     }
