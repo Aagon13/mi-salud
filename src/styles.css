@@ -23,3 +23,14 @@
   .modal-card{max-height:calc(100dvh - 24px);overscroll-behavior:contain}
   .modal-card input,.modal-card textarea,.modal-card select,.quick-pantry-form input{font-size:16px;touch-action:manipulation}
 }
+
+/* Importación de tickets · Mi Salud v0.3 */
+.pantry-toolbar{flex-wrap:wrap;justify-content:flex-start}
+.pantry-toolbar .btn{flex:1 1 auto}
+.receipt-helper{padding:12px;background:#1b3442;border:1px solid #305b6a;border-radius:11px;margin-bottom:12px;font-size:12px;color:#d4e7ed}
+.receipt-status{font-size:12px;min-height:32px;color:#a7d9ce}
+.receipt-format{font-size:11px;color:var(--muted)}
+.receipt-raw{max-height:230px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#b8c9d8;background:#0d1725;padding:12px;border-radius:9px}
+#receipt-reviewed{font-family:ui-monospace,monospace;min-height:150px}
+details summary{cursor:pointer;font-size:12px;color:#b9d0dd}
+@media(max-width:720px){.pantry-toolbar .btn{font-size:12px}}
