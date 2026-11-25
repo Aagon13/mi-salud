@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { registerPurchase, askBuyingAdvice } from '../dist/assets/lib/buyingAdvice.js';
 import assert from 'node:assert/strict';
 import { initialData,missions,routines } from '../dist/assets/data/seed.js';
 import { levelInfo, toggleMission,totalXP,isMissionDone } from '../dist/assets/lib/progress.js';
@@ -114,4 +115,34 @@ test('Se validan los artículos revisados antes de importarlos',()=>{
   const r=parseReviewedReceipt('Leche | 2 | l\nHuevos | 12 | ud');
   assert.equal(r.length,2);
   assert.throws(()=>parseReviewedReceipt('TOTAL | 1 | euros'),/Línea 1/);
+});
+
+test('Compra registrada añade historial sin modificar datos anteriores cuando no suma stock',()=>{
+ const s=initialData();assert.equal(s.purchases,undefined);
+ const item={id:'p1',date:'2026-11-23',product:'Pollo',store:'Lidl',quantity:0.5,unit:'kg',totalPrice:4.45,quality:3,note:'Algo seco'};
+ registerPurchase(s,item,false);assert.equal(s.purchases.length,1);assert.equal(s.pantry.length,0);
+ registerPurchase(s,{...item,id:'p2',store:'Mercadona',totalPrice:4.70,quality:5,note:'Muy jugoso'},true);
+ assert.equal(s.pantry[0].quantity,0.5);
+});
+test('Compara el precio unitario, valoración y calidad-precio con explicaciones',()=>{
+ const s=initialData();
+ registerPurchase(s,{id:'x',date:'2026-11-20',product:'Pollo',store:'Lidl',quantity:500,unit:'g',totalPrice:4.45,quality:3,note:'Seco'},false);
+ registerPurchase(s,{id:'y',date:'2026-11-21',product:'Pollo',store:'Mercadona',quantity:1,unit:'kg',totalPrice:9.4,quality:5,note:'Jugoso'},false);
+ const a=askBuyingAdvice(s,'¿Dónde compro mejor el pollo?');
+ assert.equal(a.cheapest,'Lidl');assert.equal(a.bestRated,'Mercadona');assert.equal(a.bestValue,'Mercadona');
+ assert.match(a.answer,/8,90/);assert.match(a.answer,/9,40/);assert.match(a.answer,/Seco/);
+ assert.match(a.answer,/precios históricos/);
+});
+test('No inventa datos sin historial ni ✅ por una sola tienda',()=>{
+ const s=initialData();assert.match(askBuyingAdvice(s,'¿Dónde compro el arroz?').answer,/Todavía no/);
+ registerPurchase(s,{id:'1',date:'2026-11-22',product:'Arroz',store:'Aldi',quantity:1,unit:'kg',totalPrice:1.5},false);
+ const a=askBuyingAdvice(s,'¿Dónde compro el arroz?');
+ assert.equal(a.bestValue,undefined);assert.match(a.answer,/Solo tengo compras/);
+});
+test('Evita unidades incompatibles y precios negativos',()=>{
+ const s=initialData();
+ assert.throws(()=>registerPurchase(s,{id:'x',date:'2026-11-20',product:'Pollo',store:'Aldi',quantity:1,unit:'kg',totalPrice:-4}),/precio/);
+ registerPurchase(s,{id:'x',date:'2026-11-20',product:'Pollo',store:'Lidl',quantity:1,unit:'ud',totalPrice:5,quality:4},false);
+ registerPurchase(s,{id:'y',date:'2026-11-21',product:'Pollo',store:'Aldi',quantity:1,unit:'kg',totalPrice:8,quality:5},false);
+ assert.equal(askBuyingAdvice(s,'polLo').bestValue,undefined);
 });
