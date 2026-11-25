@@ -18,6 +18,6 @@ export function assistantCard(lastReply=''):string {
     +'<button type="button" data-action="assistant-example" data-text="He comido un huevo">He comido un huevo</button>'
     +'<button type="button" data-action="assistant-example" data-text="He comprado seis huevos">He comprado seis huevos</button>'
     +'</div>'+status
-    +'<small>Reconoce frases habituales, no usa IA conversacional. El micrófono depende del navegador.</small>'
+    +'<small>Después de dictar, comprueba el texto y pulsa Enviar. No se guarda automáticamente.</small>'
     +'</section>';
 }

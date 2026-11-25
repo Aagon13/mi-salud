@@ -65,7 +65,7 @@ function render(resetScroll=false):void {
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
     <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='expenses'?expenses(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):current==='more'?moreMenu():health(state)}</main>
-    <footer class="page-footer">Mi Salud · v0.8.1 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
+    <footer class="page-footer">Mi Salud · v0.8.2 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
     <nav class="bottom-nav" aria-label="Navegación móvil">${MOBILE_TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
@@ -161,11 +161,18 @@ function startVoiceQuestion():void{
   const recognizer=new Recognition();recognizer.lang='es-ES';recognizer.interimResults=false;recognizer.maxAlternatives=1;
   recognizer.onresult=e=>{
     input.value=e.results[0]?.[0]?.transcript??'';
-    if(input.value)void sendAssistantMessage(input.value).catch(err=>toast(err instanceof Error?err.message:'No se pudo interpretar',true));
+    if(input.value){
+      const panel=root.querySelector<HTMLElement>('#assistant-answer');
+      if(panel){
+        panel.textContent='He escuchado: «'+input.value+'». Revisa la frase y pulsa Enviar para guardarla.';
+        panel.hidden=false;
+      }
+      input.focus({preventScroll:true});
+    }
   };
   recognizer.onerror=e=>toast('No se pudo escuchar: '+e.error,true);
   recognizer.onend=()=>{};
-  try{recognizer.start();toast('Escuchando tu pregunta…');}
+  try{recognizer.start();toast('Escuchando…');}
   catch{toast('No se pudo iniciar el micrófono. Prueba el del teclado.',true);}
 }
 function openReceipt():void{

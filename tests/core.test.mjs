@@ -211,3 +211,44 @@ test('Cantidades explícitas consolidan duplicados antiguos huevo y huevos',()=>
  processAssistantMessage(s,'Me queda un huevo');
  assert.equal(s.pantry.length,1);assert.equal(s.pantry[0].quantity,1);
 });
+
+test('El dictado de una bandeja de pavo de 500 gr extrae nombre, cantidad y unidad',()=>{
+ const cmd=parseQuickCommand('He comprado una bandeja de pavo de 500 gr');
+ assert.deepEqual(cmd,{action:'bought',name:'pavo',quantity:500,unit:'g'});
+ const s=initialData();
+ processAssistantMessage(s,'He comprado una bandeja de pavo de 500 gr');
+ assert.equal(s.pantry.length,1);
+ assert.equal(s.pantry[0].name,'pavo');
+ assert.equal(s.pantry[0].quantity,500);
+ assert.equal(s.pantry[0].unit,'g');
+});
+test('Los envases de peso conocido se multiplican y se agregan sin duplicados',()=>{
+ const s=initialData();
+ processAssistantMessage(s,'He comprado 2 bandejas de pavo de 500 g');
+ assert.equal(s.pantry[0].quantity,1000);
+ processAssistantMessage(s,'He comprado una bandeja de 500 gr de pavo');
+ assert.equal(s.pantry[0].quantity,1500);
+ assert.equal(s.pantry.length,1);
+ processAssistantMessage(s,'He comprado un paquete de arroz de 1 kg');
+ assert.equal(s.pantry[1].name,'arroz');
+ assert.equal(s.pantry[1].unit,'kg');
+ assert.equal(s.pantry[1].quantity,1);
+});
+test('Productos con cantidad al final y cajas de unidades se interpretan correctamente',()=>{
+ assert.deepEqual(parseQuickCommand('He comprado leche de 500 ml'),{action:'bought',name:'leche',quantity:500,unit:'ml'});
+ assert.deepEqual(parseQuickCommand('He comprado una caja de 12 huevos'),{action:'bought',name:'huevos',quantity:12,unit:'ud'});
+ assert.deepEqual(parseQuickCommand('He comprado tres latas de atún de 80 gramos'),{action:'bought',name:'atún',quantity:240,unit:'g'});
+ assert.deepEqual(parseQuickCommand('He comprado 500 gr de pollo'),{action:'bought',name:'pollo',quantity:500,unit:'g'});
+});
+test('Un error de transcripción no se autocorrige inventando otro alimento',()=>{
+ const cmd=parseQuickCommand('He comprado una bandeja de pago de 500 gr');
+ assert.equal(cmd.name,'pago');
+ assert.equal(cmd.quantity,500);
+ assert.equal(cmd.unit,'g');
+});
+test('No guarda bandejas sin cantidad verificable ni combina dos compras en una',()=>{
+ const s=initialData();
+ assert.throws(()=>processAssistantMessage(s,'He comprado una bandeja de pavo'),/peso|cantidad/);
+ assert.throws(()=>processAssistantMessage(s,'He comprado una bandeja de pavo de 500 gr y un litro de leche'),/producto cada vez/);
+ assert.equal(s.pantry.length,0);
+});

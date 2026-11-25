@@ -78,18 +78,55 @@ export type QuickCommand =
   | { action:'remove'; name:string }
   | { action:'bought'|'set'|'list'|'consume'; name:string; quantity:number; unit:Unit|null };
 
-const QUANTITY=/^(\d+(?:[.,]\d+)?|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce)\s*(kg|kilos?|kilogramos?|gramos?|g|litros?|l|mililitros?|ml|unidades?|ud|botellas?|paquetes?|botes?|latas?)?\s*(?:de\s+)?(.+)$/iu;
-const WORD_NUMBER:Record<string,number>={un:1,una:1,uno:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,doce:12};
+const COUNT_WORDS:Record<string,number>={un:1,una:1,uno:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,doce:12};
+const COUNT_TOKEN='(?:\\d+(?:[.,]\\d+)?|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|doce)';
+const SIZE_TOKEN='(?:\\d+(?:[.,]\\d+)?)';
+const UNIT_TOKEN='(?:kilogramos?|kilos?|kg|gramos?|grs?\\.?|g|mililitros?|ml|litros?|l)';
+const PACKAGE_TOKEN='(?:bandejas?|paquetes?|packs?|bolsas?|botes?|latas?|botellas?|tarrinas?|cajas?|briks?|tarros?|cartones?)';
+const QUANTITY=new RegExp('^('+COUNT_TOKEN+')\\s*('+UNIT_TOKEN+'|unidades?|ud)?\\s*(?:de\\s+)?(.+)$','iu');
+const PACKAGE_SIZE_END=new RegExp('^(?:('+COUNT_TOKEN+')\\s+)?'+PACKAGE_TOKEN+'\\s+de\\s+(.+?)\\s+(?:de\\s+)?('+SIZE_TOKEN+')\\s*('+UNIT_TOKEN+')\\.?$','iu');
+const PACKAGE_SIZE_FIRST=new RegExp('^(?:('+COUNT_TOKEN+')\\s+)?'+PACKAGE_TOKEN+'\\s+de\\s+('+SIZE_TOKEN+')\\s*('+UNIT_TOKEN+')\\s+de\\s+(.+)$','iu');
+const PACKAGE_COUNT=new RegExp('^(?:('+COUNT_TOKEN+')\\s+)?'+PACKAGE_TOKEN+'\\s+de\\s+('+SIZE_TOKEN+')\\s+(?:unidades?\\s+de\\s+)?(.+)$','iu');
+const SIZE_END=new RegExp('^(.+?)\\s+(?:de\\s+)?('+SIZE_TOKEN+')\\s*('+UNIT_TOKEN+')\\.?$','iu');
+function amount(raw:string):number {
+  const key=normalizeName(raw);
+  return COUNT_WORDS[key]??Number(key.replace(',','.'));
+}
+function parseUnit(raw:string):Unit {
+  const key=normalizeName(raw).replace(/\.$/u,'');
+  if(key.startsWith('kg')||key.startsWith('kilo'))return 'kg';
+  if(key.startsWith('gr')||key==='g')return 'g';
+  if(key.startsWith('mili')||key==='ml')return 'ml';
+  if(key.startsWith('l'))return 'l';
+  return 'ud';
+}
 function readQuantity(value:string,required=false):{name:string;quantity:number;unit:Unit|null} {
-  const match=value.match(QUANTITY);
-  if(required&&!match)throw Error('Indica cuántas unidades o qué cantidad queda.');
-  let quantity=1, unit:Unit|null=null, name=cleanName(value);
-  if(match){
-    quantity=WORD_NUMBER[normalizeName(match[1])]??Number(match[1].replace(',','.'));
-    const word=normalizeName(match[2]??'');
-    unit=!word?null:word.startsWith('kg')||word.startsWith('kilo')?'kg':word.startsWith('g')?'g':word.startsWith('mili')||word==='ml'?'ml':word.startsWith('l')?'l':'ud';
-    name=cleanName(match[3]);
+  const input=value.trim().replace(/[.!?]+$/u,'').trim();
+  // Un mensaje no se puede tratar como si fuera un solo producto si contiene varias compras.
+  if(/\s+y\s+(?:\d|un(?:a)?\s|dos\s|tres\s)/iu.test(input))
+    throw Error('Registra un producto cada vez para no mezclar cantidades.');
+  let name='',quantity=1,unit:Unit|null=null;
+  let m=input.match(PACKAGE_SIZE_END);
+  if(m){
+    const count=m[1]?amount(m[1]):1;
+    name=m[2];quantity=count*amount(m[3]);unit=parseUnit(m[4]);
+  }else if((m=input.match(PACKAGE_SIZE_FIRST))){
+    const count=m[1]?amount(m[1]):1;
+    name=m[4];quantity=count*amount(m[2]);unit=parseUnit(m[3]);
+  }else if((m=input.match(PACKAGE_COUNT))){
+    const count=m[1]?amount(m[1]):1;
+    name=m[3];quantity=count*amount(m[2]);unit='ud';
+  }else if((m=input.match(SIZE_END))){
+    name=m[1];quantity=amount(m[2]);unit=parseUnit(m[3]);
+  }else if((m=input.match(QUANTITY))){
+    quantity=amount(m[1]);unit=m[2]?parseUnit(m[2]):null;name=m[3];
+    if(new RegExp('^'+PACKAGE_TOKEN+'\\s+de\\s+','iu').test(name))
+      throw Error('Indica el peso o la cantidad del envase; por ejemplo «una bandeja de pavo de 500 g».');
+  }else{
+    if(required)throw Error('Indica cuántas unidades o qué cantidad queda.');
+    name=input;
   }
+  name=cleanName(name);
   if(!name||name.length>80||!Number.isFinite(quantity)||quantity<0||quantity>100000)
     throw Error('Revisa el nombre y la cantidad del producto.');
   return {name,quantity,unit};
