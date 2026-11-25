@@ -65,7 +65,7 @@ function render(resetScroll=false):void {
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
     <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='expenses'?expenses(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):current==='more'?moreMenu():health(state)}</main>
-    <footer class="page-footer">Mi Salud · v0.7 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
+    <footer class="page-footer">Mi Salud · v0.7.1 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
     <nav class="bottom-nav" aria-label="Navegación móvil">${MOBILE_TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
@@ -630,14 +630,32 @@ document.addEventListener('submit',event=>{
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&modalRoot.innerHTML)closeModal();});
 
 async function boot():Promise<void>{
-  try {state=await loadData();}catch(err){console.error(err);toast('No se pudo acceder al almacenamiento. Los cambios podrían perderse.',true);}
-  render();
-  if('serviceWorker' in navigator && location.protocol==='https:' || ('serviceWorker' in navigator && location.hostname==='localhost')){
-    // Refresh once when an updated service worker becomes active so the corrected UI loads.
-    let refreshing=false;
-    navigator.serviceWorker.addEventListener('controllerchange',()=>{
-      if(!refreshing){refreshing=true;window.location.reload();}
-    });
+  // Mostrar una interfaz antes de abrir IndexedDB: un bloqueo de la base de
+  // datos nunca debe dejar para siempre el texto "Cargando Mi Salud…".
+  const waiting=document.querySelector<HTMLDivElement>('#app');
+  if(waiting)waiting.innerHTML='<div class="startup-message"><h1>Mi Salud</h1><p>Abriendo tus datos guardados…</p><p>Si tienes otra ventana de Mi Salud abierta, ciérrala para que pueda actualizarse.</p><button class="btn btn-secondary" id="startup-retry" type="button">Reintentar</button></div>';
+  waiting?.querySelector<HTMLButtonElement>('#startup-retry')?.addEventListener('click',()=>window.location.reload());
+  let loaded=false;
+  // La lectura inicial puede demorarse en una actualización de versión.
+  const stalled=window.setTimeout(()=>{
+    if(loaded)return;
+    const msg=waiting?.querySelector<HTMLElement>('.startup-message p');
+    if(msg)msg.textContent='La apertura está tardando más de lo normal. Cierra otras pestañas de Mi Salud y pulsa Reintentar. No borres los datos.';
+  },6500);
+  try{
+    state=await loadData();loaded=true;clearTimeout(stalled);
+    render();
+  }catch(err){
+    clearTimeout(stalled);
+    console.error(err);
+    const detail=err instanceof Error?err.message:'No se pudo abrir el almacenamiento.';
+    if(waiting)waiting.innerHTML='<div class="startup-message"><h1>No se han podido abrir tus datos</h1><p>'+esc(detail)+'</p><p>Tus datos no se han borrado. Cierra las otras ventanas y vuelve a intentarlo.</p><button class="btn btn-primary" id="startup-retry" type="button">Reintentar</button></div>';
+    waiting?.querySelector<HTMLButtonElement>('#startup-retry')?.addEventListener('click',()=>window.location.reload());
+    return;
+  }
+  if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
+    // No forzar recargas en "controllerchange": las instalaciones antiguas
+    // podían quedar atrapadas en una secuencia de actualizaciones/reinicios.
     navigator.serviceWorker.register('./service-worker.js').catch(err=>console.warn('PWA sin modo sin conexión',err));
   }
 }
