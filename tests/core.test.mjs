@@ -1,6 +1,7 @@
 import test from 'node:test';
 import { parseVoicePlan, applyVoicePlan } from '../dist/assets/lib/unifiedAssistant.js';
 import { processAssistantMessage } from '../dist/assets/lib/assistant.js';
+import { parseVoicePlan, applyVoicePlan } from '../dist/assets/lib/unifiedAssistant.js';
 import { expenses } from '../dist/assets/screens/expenses.js';
 import { pantry } from '../dist/assets/screens/pantry.js';
 import { registerPurchase, askBuyingAdvice } from '../dist/assets/lib/buyingAdvice.js';
@@ -303,4 +304,46 @@ test('Asistente único: acepta compra de varios productos y evita inventar el pe
  assert.equal(pack.items[0].command.quantity,1);
  assert.equal(pack.items[0].command.unit,'ud');
  assert.equal(pack.items[0].label,'bandeja');
+});
+
+test('El mismo asistente interpreta supermercado, precio y despensa en un dictado',()=>{
+ const s=initialData();
+ const plan=parseVoicePlan(s,'Compra del Mercadona; 500 gr de pavo, me ha costado 4 euros; 1 kg de pollo, 6,50 euros; me quedan 3 huevos');
+ assert.equal(plan.store,'Mercadona');
+ assert.equal(plan.items.length,3);
+ assert.deepEqual(plan.items[0].command,{action:'bought',name:'pavo',quantity:500,unit:'g'});
+ assert.equal(plan.items[0].totalPrice,4);
+ assert.deepEqual(plan.items[1].command,{action:'bought',name:'pollo',quantity:1,unit:'kg'});
+ assert.equal(plan.items[1].totalPrice,6.5);
+ const reply=applyVoicePlan(s,plan);
+ assert.match(reply,/Total conocido/);
+ assert.equal(s.purchases.length,2);
+ assert.equal(s.pantry.length,3);
+ assert.equal(s.pantry.find(x=>x.name==='huevos').quantity,3);
+ assert.equal(s.shoppingStore,'Mercadona');
+});
+test('El supermercado se conserva entre frases pero no se inventan precios',()=>{
+ const s=initialData();
+ applyVoicePlan(s,parseVoicePlan(s,'Compra del Lidl'));
+ applyVoicePlan(s,parseVoicePlan(s,'Una bandeja de salchichas'));
+ assert.equal(s.purchases.length,1);
+ assert.equal(s.purchases[0].store,'Lidl');
+ assert.equal(s.purchases[0].totalPrice,undefined);
+ assert.equal(s.purchases[0].quantity,1);
+ assert.equal(s.purchases[0].unit,'ud');
+});
+test('Un error en una operación impide que se guarde parcialmente el lote',()=>{
+ const s=initialData();
+ applyVoicePlan(s,parseVoicePlan(s,'Me quedan 2 huevos'));
+ const before=structuredClone(s);
+ const plan=parseVoicePlan(s,'He comprado 3 huevos; he comido 7 huevos');
+ assert.throws(()=>applyVoicePlan(s,plan),/Solo tienes/);
+ assert.deepEqual(s,before);
+});
+test('La voz no crea compras con precio cuando no se ha identificado supermercado',()=>{
+ const s=initialData();
+ const plan=parseVoicePlan(s,'500 gr de pavo, 4 euros');
+ assert.throws(()=>applyVoicePlan(s,plan),/supermercado/);
+ assert.equal(s.pantry.length,0);
+ assert.equal(s.purchases,undefined);
 });
