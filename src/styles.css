@@ -96,3 +96,15 @@ details summary{cursor:pointer;font-size:12px;color:#b9d0dd}
 .assistant-answer{white-space:pre-wrap;line-height:1.6;color:#e2f4eb;background:#15342e;border:1px solid #3b7659;border-radius:12px;padding:14px;font-size:13px;margin:12px 0}
 .assistant-answer[hidden]{display:none}
 @media(max-width:460px){.assistant-compose input{flex-basis:100%}.assistant-compose .assistant-send{flex:1}}
+
+/* Mi Salud v0.7 — fotografías de tickets guardadas localmente */
+.receipt-history-card{border-color:#35586b}
+.receipt-history-card>.section-heading{flex-wrap:wrap}
+.receipt-history-card>p{font-size:12px;color:var(--muted);margin:8px 0 15px}
+.receipt-history-row{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid var(--line)}
+.receipt-history-row:last-child{border-bottom:0}
+.receipt-history-row .stock-info{flex:1;min-width:0}
+.receipt-history-row .stock-info small{display:block;font-size:11px;color:var(--muted)}
+.receipt-history-icon{background:#1d3c46;color:#8be5d2;border-radius:12px;padding:11px;flex-shrink:0}
+.receipt-preview{display:block;max-height:58vh;width:100%;object-fit:contain;background:#091320;border-radius:12px;margin:10px 0 14px;border:1px solid #395266}
+.receipt-preview[hidden]{display:none}
