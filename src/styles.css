@@ -72,3 +72,9 @@ details summary{cursor:pointer;font-size:12px;color:#b9d0dd}
 .expense-quick-actions .btn{justify-content:center;min-height:55px}
 .expense-help{font-size:12px;color:var(--muted);margin-bottom:21px}
 @media(max-width:400px){.expense-quick-actions{grid-template-columns:1fr}.bottom-item{font-size:10px}}
+
+/* Acceso directo a cámara y galería desde ticket */
+.receipt-photo-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.receipt-photo-actions .btn{min-height:54px;justify-content:center}
+.receipt-file{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}
+@media(max-width:360px){.receipt-photo-actions{grid-template-columns:1fr}}

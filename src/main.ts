@@ -166,16 +166,23 @@ function startVoiceQuestion():void{
   catch{toast('No se pudo iniciar el micrófono. Prueba el del teclado.',true);}
 }
 function openReceipt():void{
+  selectedReceiptFile=null;
   showModal(modalHeading('Importar ticket','Fotografía de cualquier supermercado. Revisa los artículos antes de guardar.') +
     '<p class="receipt-helper">La lectura se hace en tu móvil. Necesita internet para descargar el lector la primera vez; no se envían las fotos a una IA.</p>' +
     '<div class="form-grid">' +
-    field('Foto del ticket','<input id="receipt-photo" type="file" accept="image/*" capture="environment">') +
+    field('Supermercado (para el historial)','<input id="receipt-store" maxlength="80" list="known-ticket-stores" placeholder="Ej. Lidl" autocomplete="off" required><datalist id="known-ticket-stores">'+[...new Set((state.purchases??[]).map(x=>x.store))].map(x=>'<option value="'+esc(x)+'"></option>').join('')+'</datalist>') +
+    '<div class="receipt-photo-actions">' +
+      '<button type="button" class="btn btn-primary" data-action="pick-receipt-camera">'+icon('camera',19)+' Hacer foto</button>' +
+      '<button type="button" class="btn btn-secondary" data-action="pick-receipt-gallery">'+icon('upload',19)+' Galería</button>' +
+    '</div>' +
+    '<input id="receipt-photo-camera" class="receipt-file" aria-label="Cámara para ticket" type="file" accept="image/*" capture="environment">' +
+    '<input id="receipt-photo-gallery" class="receipt-file" aria-label="Seleccionar ticket de galería" type="file" accept="image/*">' +
     '<button type="button" class="btn btn-secondary btn-wide" data-action="scan-receipt">Leer foto del ticket</button>' +
-    '<p class="receipt-status" role="status" aria-live="polite">Selecciona una foto y pulsa «Leer foto».</p>' +
+    '<p class="receipt-status" role="status" aria-live="polite">Pulsa «Hacer foto» para abrir la cámara o elige un ticket de tu galería.</p>' +
     field('Productos detectados · revisa y corrige','<textarea id="receipt-reviewed" rows="9" placeholder="Leche | 2 | l&#10;Huevos | 12 | ud" spellcheck="false"></textarea>') +
-    '<small class="receipt-format">Una línea por artículo: nombre | cantidad | unidad (ud, g, kg, ml, l). Borra las líneas incorrectas.</small>' +
+    '<small class="receipt-format">Una línea por artículo: nombre | cantidad | unidad (ud, g, kg, ml, l). Puedes corregir las propuestas antes de confirmar. El lector todavía NO extrae precios: podrás añadirlos después en tu historial.</small>' +
     '<details><summary>Ver texto original del ticket</summary><pre id="receipt-raw" class="receipt-raw">Todavía no se ha leído ninguna foto.</pre></details>' +
-    '<button type="button" class="btn btn-primary btn-wide" data-action="save-receipt">Confirmar y añadir productos</button></div>');
+    '<button type="button" class="btn btn-primary btn-wide" data-action="save-receipt">Confirmar productos y registrar compra</button></div>');
 }
 type ReceiptWorker={recognize:(image:File)=>Promise<{data:{text:string}}>;terminate:()=>Promise<unknown>};
 type OCRLibrary={createWorker:(language:string,mode:number,options:{logger:(progress:{status?:string;progress?:number})=>void})=>Promise<ReceiptWorker>};
@@ -195,8 +202,9 @@ function loadReceiptReader():Promise<OCRLibrary>{
   }).catch(err=>{readerLibrary=undefined;throw err;});
   return readerLibrary;
 }
+let selectedReceiptFile:File|null=null;
 async function scanReceipt():Promise<void>{
-  const file=modalRoot.querySelector<HTMLInputElement>('#receipt-photo')?.files?.[0];
+  const file=selectedReceiptFile;
   if(!file)throw Error('Primero selecciona o haz una foto del ticket.');
   if(!file.type.startsWith('image/')||file.size>12_000_000)throw Error('Utiliza una imagen de menos de 12 MB.');
   const label=modalRoot.querySelector<HTMLElement>('.receipt-status');
@@ -228,9 +236,13 @@ async function saveReceipt():Promise<void>{
   const field=modalRoot.querySelector<HTMLTextAreaElement>('#receipt-reviewed');
   if(!field)throw Error('No se encuentra la revisión del ticket.');
   const items=parseReviewedReceipt(field.value);
-  if(!window.confirm('Vas a añadir '+items.length+' productos a la despensa. ¿Continuar?'))return;
-  for(const item of items)purchase(state,item.name,item.quantity,item.unit);
-  closeModal();await commit(items.length+' productos añadidos a la despensa');
+  const store=modalRoot.querySelector<HTMLInputElement>('#receipt-store')?.value.trim()??'';
+  if(!store||store.length>80)throw Error('Indica el supermercado antes de guardar el ticket.');
+  if(!window.confirm('Se guardarán '+items.length+' productos de '+store+' en tu historial y despensa. El precio está pendiente de registrar. ¿Confirmar?'))return;
+  const snapshot:AppData={...state,purchases:state.purchases?[...state.purchases]:[],pantry:state.pantry.map(x=>({...x})),groceries:state.groceries.map(x=>({...x}))};
+  for(const item of items)registerPurchase(snapshot,{id:uid(),date:localDate(),product:item.name,store,quantity:item.quantity,unit:item.unit},true);
+  state=snapshot;
+  closeModal();await commit(items.length+' productos registrados (precios pendientes)');
 }
 function openGrocery():void{
   showModal(`${modalHeading('Añadir a la compra')}<form id="form-grocery" class="form-grid" autocomplete="off">
@@ -316,6 +328,8 @@ async function act(action:string,el:HTMLElement):Promise<void>{
     case 'ask-buying':askFromPantry();break;
     case 'voice-buying':startVoiceQuestion();break;
     case 'open-receipt':openReceipt();break;
+    case 'pick-receipt-camera':modalRoot.querySelector<HTMLInputElement>('#receipt-photo-camera')?.click();break;
+    case 'pick-receipt-gallery':modalRoot.querySelector<HTMLInputElement>('#receipt-photo-gallery')?.click();break;
     case 'scan-receipt':await scanReceipt();break;
     case 'save-receipt':await saveReceipt();break;
     case 'save-pantry':{
@@ -487,6 +501,15 @@ document.addEventListener('change',event=>{
     state.plan=state.plan.filter(p=>p.id!==id);
     if(recipeId){state.plan.push({id,date,kind:kind as 'comida'|'cena',recipeId,servings:1});markDone('plan');}
     void commit('Menú actualizado');
+  }
+  if((input.id==='receipt-photo-camera'||input.id==='receipt-photo-gallery')&&input instanceof HTMLInputElement){
+    const file=input.files?.[0];
+    if(file){
+      selectedReceiptFile=file;
+      const status=modalRoot.querySelector<HTMLElement>('.receipt-status');
+      if(status)status.textContent='Foto seleccionada: '+file.name+'. Leyendo…';
+      void scanReceipt();
+    }
   }
   if(input.id==='backup-file' && input instanceof HTMLInputElement){
     const file=input.files?.[0];if(!file)return;
