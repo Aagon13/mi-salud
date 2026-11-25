@@ -141,8 +141,9 @@ async function savePurchase():Promise<void>{
 }
 let lastAssistantReply='';
 let activeSpeech:BrowserRecognizer|null=null;
-function showAssistantReview(message:string):void{
+function showAssistantReview(message:string,storeOverride?:string):void{
   const plan=parseVoicePlan(state,message);
+  if(storeOverride!==undefined)plan.store=storeOverride||undefined;
   const rows=plan.items.map(item=>{
     const c=item.command;
     const action=c.action==='bought'?'Compra':c.action==='set'?'En casa':c.action==='consume'?'Consumir':c.action==='list'?'Lista':c.action==='out'?'Agotado':'Eliminar';
@@ -157,25 +158,21 @@ function showAssistantReview(message:string):void{
     '<p class="note">Los artículos sin precio no se suman al gasto. No se guardará nada hasta confirmar.</p>'+
     '<button type="button" class="btn btn-secondary btn-wide" data-action="assistant-review-update">Volver a interpretar</button>'+
     '<button type="button" class="btn btn-primary btn-wide" data-action="assistant-review-save">Confirmar cambios</button></div>');
+  const list=modalRoot.querySelector<HTMLElement>('.voice-review-list');
+  if(list){list.dataset.reviewedText=message;list.dataset.reviewedStore=plan.store??'';}
 }
 async function saveAssistantReview():Promise<void>{
   const text=modalRoot.querySelector<HTMLTextAreaElement>('#assistant-review-text')?.value??'';
   const typedStore=modalRoot.querySelector<HTMLInputElement>('#assistant-review-store')?.value.trim()??'';
-  const fresh=parseVoicePlan(state,text);
-  const savedStore=modalRoot.querySelector<HTMLElement>('.voice-review-list')?.getAttribute('data-reviewed-store')??null;
-  // Cada corrección del texto o supermercado debe actualizar la revisión visible.
-  if(fresh.store!==typedStore || savedStore!==typedStore){
-    showAssistantReview(text);
-    const store=modalRoot.querySelector<HTMLInputElement>('#assistant-review-store');
-    if(store)store.value=typedStore;
-    const list=modalRoot.querySelector<HTMLElement>('.voice-review-list');
-    if(list)list.setAttribute('data-reviewed-store',typedStore);
-    toast('Revisa la propuesta actualizada y vuelve a confirmar.');
+  const list=modalRoot.querySelector<HTMLElement>('.voice-review-list');
+  if(!list)throw Error('Vuelve a abrir la revisión.');
+  if(list.dataset.reviewedText!==text || list.dataset.reviewedStore!==typedStore){
+    showAssistantReview(text,typedStore);
+    toast('Revisa la propuesta actualizada y confirma de nuevo.');
     return;
   }
-  if(!fresh.items.length&&!typedStore)throw Error('No hay cambios.');
-  if(typedStore)fresh.store=typedStore;
-  if(!typedStore)fresh.store=undefined;
+  const fresh=parseVoicePlan(state,text);
+  fresh.store=typedStore||undefined;
   const summary=applyVoicePlan(state,fresh);
   lastAssistantReply=summary;
   closeModal();
@@ -439,13 +436,7 @@ async function act(action:string,el:HTMLElement):Promise<void>{
     case 'assistant-review-update':{
       const text=modalRoot.querySelector<HTMLTextAreaElement>('#assistant-review-text')?.value??'';
       const store=modalRoot.querySelector<HTMLInputElement>('#assistant-review-store')?.value.trim()??'';
-      const plan=parseVoicePlan(state,text);
-      if(store)plan.store=store;
-      showAssistantReview(text);
-      const storeInput=modalRoot.querySelector<HTMLInputElement>('#assistant-review-store');
-      if(storeInput)storeInput.value=plan.store??'';
-      const list=modalRoot.querySelector<HTMLElement>('.voice-review-list');
-      if(list)list.setAttribute('data-reviewed-store',plan.store??'');
+      showAssistantReview(text,store);
       break;
     }
     case 'assistant-review-save':await saveAssistantReview();break;
@@ -588,6 +579,7 @@ async function submit(form:HTMLFormElement):Promise<void> {
       await commit(message);break;
     }
     case 'form-assistant':{
+      if(activeSpeech){activeSpeech.stop();activeSpeech=null;}
       showAssistantReview(str('message'));break;
     }
     case 'form-grocery':{
