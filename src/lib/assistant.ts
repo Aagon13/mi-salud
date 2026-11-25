@@ -17,7 +17,7 @@ export function processAssistantMessage(s:AppData,input:string):AssistantRespons
     return {reply,changed:true};
   }catch(error){
     // Errores de datos concretos no deben convertirse silenciosamente en una consulta.
-    const startsLikeCommand=/^(?:he\s+comprado|compr[eé]|he\s+pillado|he\s+tra[ií]do|se\s+me|se\s+ha|no\s+me\s+queda|ya\s+no\s+tengo|no\s+tengo|no\s+queda|me\s+he\s+quedado|se\s+acab|me\s+queda|tengo|quedan|ahora\s+tengo|apunta|pon\s+|a[nñ]ade|agrega|mete\s+|me\s+falta|necesito|hay\s+que\s+comprar)/iu.test(raw);
+    const startsLikeCommand=/^(?:me\s+he\s+comido|me\s+com[ií]|he\s+comido|he\s+usado|he\s+consumido|he\s+tirado|descuenta|resta|r[eé]stame|elimina|borra|quita|retira|he\s+comprado|compr[eé]|he\s+pillado|he\s+tra[ií]do|se\s+me|se\s+ha|no\s+me\s+queda|ya\s+no\s+tengo|no\s+tengo|no\s+queda|me\s+he\s+quedado|se\s+acab|me\s+queda|tengo|quedan|ahora\s+tengo|apunta|pon\s+|a[nñ]ade|agrega|mete\s+|me\s+falta|necesito|hay\s+que\s+comprar)/iu.test(raw);
     if(startsLikeCommand)throw error;
   }
   const isQuestion=/^(?:[¿¡]?\s*(?:d[oó]nde|qu[eé]|cu[aá]l|cu[aá]nto|c[oó]mo|a\s+cu[aá]nto|por\s+qu[eé]|me\s+conviene|recomi[eé]ndame|dime|en\s+qu[eé]|precio|precios|calidad|gasto|gast[eé]|he\s+gastado))\b/iu.test(raw)
