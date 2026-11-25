@@ -7,7 +7,8 @@ import { recipes, recipeDetail } from './screens/recipes.js';
 import { training } from './screens/training.js';
 import { health } from './screens/health.js';
 import { currentWeek, localDate } from './lib/dates.js';
-import { loadData, saveData, isValidBackup, downloadBackup } from './lib/storage.js';
+import { loadData, saveData, isValidBackup, downloadFullBackup, restoreBackupPhotos, saveReceiptPhoto, readReceiptPhoto, deleteReceiptPhoto } from './lib/storage.js';
+import { compressReceiptPhoto } from './lib/receiptPhoto.js';
 import { toggleMission, levelInfo, totalXP } from './lib/progress.js';
 import { addToPantry, cookRecipe, enoughForRecipe, computeCoverage } from './lib/planner.js';
 import { applyQuickCommand, markOut, purchase, shoppingList } from './lib/shopping.js';
@@ -16,7 +17,7 @@ import { registerPurchase } from './lib/buyingAdvice.js';
 import { processAssistantMessage } from './lib/assistant.js';
 import { escapeHTML as esc, optUnits, positive, uid, shrinkPhoto, normalizeName, joinKey } from './lib/helpers.js';
 import { icon } from './ui/icons.js';
-import type { AppData, Ingredient, Recipe, Unit, PurchaseRecord } from './types.js';
+import type { AppData, Ingredient, Recipe, Unit, PurchaseRecord, ReceiptRecord } from './types.js';
 
 const TABS = [
   {id:'home',label:'Hoy',icon:'home'},
@@ -64,7 +65,7 @@ function render(resetScroll=false):void {
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
     <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='expenses'?expenses(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):current==='more'?moreMenu():health(state)}</main>
-    <footer class="page-footer">Mi Salud · v0.6 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
+    <footer class="page-footer">Mi Salud · v0.7 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
     <nav class="bottom-nav" aria-label="Navegación móvil">${MOBILE_TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
@@ -77,6 +78,7 @@ async function commit(message='Guardado'):Promise<void>{
   finally{saving=false;}
 }
 function showModal(content:string):void {
+  disposePhotoUrl();
   lastModalFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
   modalRoot.innerHTML=`<div class="modal-shade"><div class="modal-card" role="dialog" aria-modal="true" aria-label="Formulario" tabindex="-1">${content}</div></div>`;
   document.body.classList.add('modal-open');
@@ -84,7 +86,11 @@ function showModal(content:string):void {
   // while the overlay is moving, which can turn the following tap into a backdrop tap.
   modalRoot.querySelector<HTMLElement>('.modal-card')?.focus({preventScroll:true});
 }
-function closeModal():void{modalRoot.innerHTML='';document.body.classList.remove('modal-open');lastModalFocus?.focus();}
+let photoDisplayUrl:string|null=null;
+function disposePhotoUrl():void{
+  if(photoDisplayUrl){URL.revokeObjectURL(photoDisplayUrl);photoDisplayUrl=null;}
+}
+function closeModal():void{disposePhotoUrl();modalRoot.innerHTML='';document.body.classList.remove('modal-open');lastModalFocus?.focus();}
 function modalHeading(title:string,subtitle=''):string {return `<div class="modal-head"><div><h2>${esc(title)}</h2>${subtitle?`<p>${esc(subtitle)}</p>`:''}</div><button class="icon-btn" data-action="close-modal" type="button" aria-label="Cerrar">${icon('close')}</button></div>`;}
 function field(label:string,input:string):string{return `<label class="field">${esc(label)}${input}</label>`;}
 function numberField(name:string,val:string|number='1',min='0.01'):string{return `<input name="${name}" type="number" step="any" min="${min}" value="${esc(val)}" required>`;}
@@ -165,6 +171,7 @@ function startVoiceQuestion():void{
 }
 function openReceipt():void{
   selectedReceiptFile=null;
+  activeReceiptId=null;
   showModal(modalHeading('Importar ticket','Fotografía de cualquier supermercado. Revisa los artículos antes de guardar.') +
     '<p class="receipt-helper">La lectura se hace en tu móvil. Necesita internet para descargar el lector la primera vez; no se envían las fotos a una IA.</p>' +
     '<div class="form-grid">' +
@@ -176,7 +183,8 @@ function openReceipt():void{
     '<input id="receipt-photo-camera" class="receipt-file" aria-label="Cámara para ticket" type="file" accept="image/*" capture="environment">' +
     '<input id="receipt-photo-gallery" class="receipt-file" aria-label="Seleccionar ticket de galería" type="file" accept="image/*">' +
     '<button type="button" class="btn btn-secondary btn-wide" data-action="scan-receipt">Leer foto del ticket</button>' +
-    '<p class="receipt-status" role="status" aria-live="polite">Pulsa «Hacer foto» para abrir la cámara o elige un ticket de tu galería.</p>' +
+    '<p class="receipt-status" role="status" aria-live="polite">Pulsa «Hacer foto» para abrir la cámara o elige un ticket de tu galería. La imagen se archivará automáticamente.</p>' +
+    '<img id="receipt-preview" class="receipt-preview" alt="Ticket fotografiado" hidden>' +
     field('Productos detectados · revisa y corrige','<textarea id="receipt-reviewed" rows="9" placeholder="Leche | 2 | l&#10;Huevos | 12 | ud" spellcheck="false"></textarea>') +
     '<small class="receipt-format">Una línea por artículo: nombre | cantidad | unidad (ud, g, kg, ml, l). Puedes corregir las propuestas antes de confirmar. El lector todavía NO extrae precios: podrás añadirlos después en tu historial.</small>' +
     '<details><summary>Ver texto original del ticket</summary><pre id="receipt-raw" class="receipt-raw">Todavía no se ha leído ninguna foto.</pre></details>' +
@@ -201,6 +209,56 @@ function loadReceiptReader():Promise<OCRLibrary>{
   return readerLibrary;
 }
 let selectedReceiptFile:File|null=null;
+let activeReceiptId:string|null=null;
+async function archiveSelectedReceipt(file:File):Promise<void>{
+  const meta=state.receipts??[];
+  if(meta.length>=120)throw Error('Ya hay 120 tickets archivados. Elimina algunos antes de guardar más.');
+  if(meta.reduce((sum,r)=>sum+r.photoBytes,0)>75_000_000)throw Error('Las fotos guardadas ocupan demasiado espacio. Exporta una copia y libera tickets antiguos.');
+  const blob=await compressReceiptPhoto(file);
+  const id=uid(),now=new Date().toISOString();
+  const record:ReceiptRecord={id,capturedAt:now,date:localDate(),store:'',status:'pending',ocrText:'',reviewedText:'',purchaseIds:[],photoBytes:blob.size};
+  await saveReceiptPhoto(id,blob);
+  const store=modalRoot.querySelector<HTMLInputElement>('#receipt-store')?.value.trim()??'';
+  record.store=store.slice(0,80);
+  state.receipts=[...(state.receipts??[]),record];
+  activeReceiptId=id;
+  await commit('Foto archivada en tu móvil');
+  if(!modalRoot.querySelector<HTMLImageElement>('#receipt-preview'))return;
+  await displayReceiptPhoto(id);
+}
+async function displayReceiptPhoto(id:string):Promise<void>{
+  const image=modalRoot.querySelector<HTMLImageElement>('#receipt-preview');
+  if(!image)return;
+  const blob=await readReceiptPhoto(id);
+  if(!blob){image.hidden=true;return;}
+  disposePhotoUrl();
+  photoDisplayUrl=URL.createObjectURL(blob);
+  image.src=photoDisplayUrl;image.hidden=false;
+}
+async function viewReceipt(id:string):Promise<void>{
+  const ticket=(state.receipts??[]).find(x=>x.id===id);
+  if(!ticket)return;
+  const existing=await readReceiptPhoto(id);
+  if(!existing)throw Error('No se encuentra la foto original. Puede haberse perdido al importar una copia antigua.');
+  activeReceiptId=id;selectedReceiptFile=null;
+  if(ticket.status==='pending'){
+    openReceipt();
+    activeReceiptId=id;
+    modalRoot.querySelector<HTMLInputElement>('#receipt-store')!.value=ticket.store;
+    modalRoot.querySelector<HTMLTextAreaElement>('#receipt-reviewed')!.value=ticket.reviewedText;
+    modalRoot.querySelector<HTMLElement>('#receipt-raw')!.textContent=ticket.ocrText||'No hay texto OCR guardado.';
+    const label=modalRoot.querySelector<HTMLElement>('.receipt-status');
+    if(label)label.textContent='Ticket archivado. Puedes revisar sus artículos y confirmar, o volver atrás.';
+  }else{
+    showModal(modalHeading('Ticket de '+(ticket.store||'supermercado'),ticket.date+' · '+ticket.purchaseIds.length+' artículos vinculados')+
+      '<img id="receipt-preview" class="receipt-preview" alt="Fotografía original del ticket" hidden>'+
+      '<p class="note">La fotografía se guarda solo en este dispositivo y en tus copias de seguridad completas.</p>'+
+      '<details><summary>Ver lectura original</summary><pre class="receipt-raw">'+esc(ticket.ocrText||'No disponible')+'</pre></details>'+
+      '<details><summary>Ver artículos confirmados</summary><pre class="receipt-raw">'+esc(ticket.reviewedText||'No disponible')+'</pre></details>');
+    activeReceiptId=id;
+  }
+  await displayReceiptPhoto(id);
+}
 async function scanReceipt():Promise<void>{
   const file=selectedReceiptFile;
   if(!file)throw Error('Primero selecciona o haz una foto del ticket.');
@@ -220,6 +278,12 @@ async function scanReceipt():Promise<void>{
     const result=await worker.recognize(file);
     raw.textContent=result.data.text||'No se ha podido reconocer texto.';
     const items=parseReceiptText(result.data.text||'');
+    const record=(state.receipts??[]).find(x=>x.id===activeReceiptId);
+    if(record){
+      record.ocrText=(result.data.text||'').slice(0,20000);
+      record.reviewedText=items.map(x=>x.name+' | '+x.quantity+' | '+x.unit).join('\n');
+      await saveData(state);
+    }
     reviewed.value=items.map(x=>x.name+' | '+x.quantity+' | '+x.unit).join('\n');
     label.textContent=items.length?'Detectados '+items.length+' posibles productos. Revísalos antes de confirmar.':'No se encontraron productos fiables. Revisa el texto y escribe los artículos manualmente.';
   }catch(err){
@@ -236,9 +300,15 @@ async function saveReceipt():Promise<void>{
   const items=parseReviewedReceipt(field.value);
   const store=modalRoot.querySelector<HTMLInputElement>('#receipt-store')?.value.trim()??'';
   if(!store||store.length>80)throw Error('Indica el supermercado antes de guardar el ticket.');
+  const linked=(state.receipts??[]).find(x=>x.id===activeReceiptId);
+  if(!linked)throw Error('No se encuentra el ticket archivado. Selecciona una foto antes de importar.');
+  if(linked.status==='imported')throw Error('Este ticket ya se ha importado. No se puede duplicar su compra.');
   if(!window.confirm('Se guardarán '+items.length+' productos de '+store+' en tu historial y despensa. El precio está pendiente de registrar. ¿Confirmar?'))return;
   const snapshot:AppData={...state,purchases:state.purchases?[...state.purchases]:[],pantry:state.pantry.map(x=>({...x})),groceries:state.groceries.map(x=>({...x}))};
-  for(const item of items)registerPurchase(snapshot,{id:uid(),date:localDate(),product:item.name,store,quantity:item.quantity,unit:item.unit},true);
+  const id=linked.id;
+  const purchases=items.map(item=>({id:uid(),date:linked.date,product:item.name,store,quantity:item.quantity,unit:item.unit,receiptId:id}));
+  for(const item of purchases)registerPurchase(snapshot,item,true);
+  snapshot.receipts=(state.receipts??[]).map(r=>r.id===id?{...r,status:'imported',store,reviewedText:field.value,purchaseIds:purchases.map(x=>x.id)}:r);
   state=snapshot;
   closeModal();await commit(items.length+' productos registrados (precios pendientes)');
 }
@@ -330,6 +400,15 @@ async function act(action:string,el:HTMLElement):Promise<void>{
       break;
     }
     case 'open-receipt':openReceipt();break;
+    case 'view-receipt':await viewReceipt(id);break;
+    case 'delete-receipt':{
+      const record=(state.receipts??[]).find(x=>x.id===id);
+      if(!record)return;
+      if(!window.confirm('¿Eliminar la fotografía del ticket de '+(record.store||record.date)+'? Los artículos y gastos ya registrados NO se borrarán.'))return;
+      await deleteReceiptPhoto(id);
+      state.receipts=(state.receipts??[]).filter(r=>r.id!==id);
+      await commit('Fotografía del ticket eliminada');break;
+    }
     case 'pick-receipt-camera':modalRoot.querySelector<HTMLInputElement>('#receipt-photo-camera')?.click();break;
     case 'pick-receipt-gallery':modalRoot.querySelector<HTMLInputElement>('#receipt-photo-gallery')?.click();break;
     case 'scan-receipt':await scanReceipt();break;
@@ -398,7 +477,7 @@ async function act(action:string,el:HTMLElement):Promise<void>{
       if(prev){prev.routineId=id;}else state.workouts.push({date:today,routineId:id,note:''});
       markDone('fuerza');await commit('Entrenamiento registrado · +40 XP');break;
     }
-    case 'export':downloadBackup(state);toast('Copia exportada');break;
+    case 'export':await downloadFullBackup(state);toast('Copia con fotografías exportada');break;
     case 'close-modal':closeModal();break;
     default:break;
   }
@@ -512,18 +591,26 @@ document.addEventListener('change',event=>{
     if(file){
       selectedReceiptFile=file;
       const status=modalRoot.querySelector<HTMLElement>('.receipt-status');
-      if(status)status.textContent='Foto seleccionada: '+file.name+'. Leyendo…';
-      void scanReceipt();
+      if(status)status.textContent='Guardando foto del ticket…';
+      void archiveSelectedReceipt(file).then(()=>scanReceipt()).catch(err=>{
+        const message=err instanceof Error?err.message:'No se pudo archivar el ticket.';
+        if(status)status.textContent=message;
+        toast(message,true);
+      });
     }
   }
   if(input.id==='backup-file' && input instanceof HTMLInputElement){
     const file=input.files?.[0];if(!file)return;
     void file.text().then(text=>{
-      if(file.size>12_000_000)throw Error('La copia es demasiado grande.');
+      if(file.size>200_000_000)throw Error('La copia es demasiado grande.');
       const data:unknown=JSON.parse(text);
       if(!isValidBackup(data))throw Error('Esta copia no es válida o pertenece a otra versión.');
       if(!window.confirm('Se reemplazarán todos los datos actuales por los de la copia. ¿Continuar?'))return;
-      state=structuredClone(data);return commit('Copia importada correctamente');
+      return restoreBackupPhotos(data).then(()=>{
+        state=structuredClone(data);
+        delete (state as AppData & {receiptPhotos?:unknown}).receiptPhotos;
+        return commit('Copia importada con fotografías');
+      });
     }).catch(err=>toast(err instanceof Error?err.message:'No se pudo importar la copia',true));
   }
 });
