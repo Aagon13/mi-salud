@@ -11,7 +11,7 @@ import { loadData, saveData, isValidBackup, downloadFullBackup, restoreBackupPho
 import { compressReceiptPhoto } from './lib/receiptPhoto.js';
 import { toggleMission, levelInfo, totalXP } from './lib/progress.js';
 import { addToPantry, cookRecipe, enoughForRecipe, computeCoverage } from './lib/planner.js';
-import { applyQuickCommand, markOut, purchase, shoppingList } from './lib/shopping.js';
+import { applyQuickCommand, markOut, purchase, shoppingList, consumePantry, removeFromPantry } from './lib/shopping.js';
 import { parseReceiptText, parseReviewedReceipt } from './lib/receipt.js';
 import { registerPurchase } from './lib/buyingAdvice.js';
 import { processAssistantMessage } from './lib/assistant.js';
@@ -65,7 +65,7 @@ function render(resetScroll=false):void {
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
     <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='expenses'?expenses(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):current==='more'?moreMenu():health(state)}</main>
-    <footer class="page-footer">Mi Salud · v0.7.1 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
+    <footer class="page-footer">Mi Salud · v0.8 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
     <nav class="bottom-nav" aria-label="Navegación móvil">${MOBILE_TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
@@ -97,13 +97,12 @@ function numberField(name:string,val:string|number='1',min='0.01'):string{return
 function openPantry(id?:string):void{
   const p=state.pantry.find(x=>x.id===id);
   const habitual=p?.habitual??true;
-  showModal(`${modalHeading(p?'Editar producto':'Añadir producto','Define cuánto tienes y cómo quieres reponerlo.')}
+  showModal(`${modalHeading(p?'Editar producto':'Añadir producto')}
     <form id="form-pantry" class="form-grid" autocomplete="off" novalidate><input type="hidden" name="id" value="${esc(p?.id??'')}">
     ${field('Producto',`<input name="productName" autocomplete="off" placeholder="Ej. Kéfir" value="${esc(p?.name??'')}" maxlength="80" required>`)}
     <div class="form-pair">${field('Cantidad que tengo ahora',numberField('quantity',p?.quantity??1,'0'))}${field('Unidad',`<select name="unit">${optUnits(p?.unit??'ud')}</select>`)}</div>
     <label class="habitual-toggle"><input type="checkbox" name="habitual" ${habitual?'checked':''}><span><b>Lo compro habitualmente</b><small>Que aparezca automáticamente cuando me quede poco.</small></span></label>
-    <div class="form-pair">${field('Avisarme si tengo menos de',numberField('minStock',p?.minStock??1,'0.01'))}${field('Cantidad que quiero tener',numberField('restockQuantity',p?.restockQuantity??Math.max(p?.quantity??1,1),'0.01'))}</div>
-    <p class="note">Ejemplo: mínimo 1 y objetivo 3 → si quedan 0, añade 3; si quedan 0,5, añade 2,5.</p>
+    <details class="pantry-advanced"><summary>Reposición automática (opcional)</summary><div class="form-pair">${field('Avisar por debajo de',numberField('minStock',p?.minStock??1,'0'))}${field('Cantidad objetivo',numberField('restockQuantity',p?.restockQuantity??Math.max(p?.quantity??1,1),'0.01'))}</div></details>
     <p class="pantry-form-error" role="alert" aria-live="polite" hidden></p><button class="btn btn-primary btn-wide" type="button" data-action="save-pantry">${icon('save',18)} Guardar producto</button></form>`);
 }
 function openPurchase(id?:string):void{
@@ -432,10 +431,29 @@ async function act(action:string,el:HTMLElement):Promise<void>{
       break;
     }
     case 'edit-pantry':openPantry(id);break;
+    case 'pantry-minus':{
+      const p=state.pantry.find(x=>x.id===id);if(!p)return;
+      const amount=p.unit==='ud'?1:p.unit==='kg'||p.unit==='l'?0.1:100;
+      if(p.quantity<=0){toast('Este producto ya está agotado. Puedes editarlo o eliminarlo.',true);return;}
+      if(p.quantity+1e-9<amount){toast('Quedan '+p.quantity+' '+p.unit+'. Usa Editar para ajustar la cantidad.',true);return;}
+      consumePantry(state,p.name,amount,p.unit);
+      await commit('Consumido: '+p.name);break;
+    }
+    case 'pantry-plus':{
+      const p=state.pantry.find(x=>x.id===id);if(!p)return;
+      const amount=p.unit==='ud'?1:p.unit==='kg'||p.unit==='l'?0.1:100;
+      purchase(state,p.name,amount,p.unit);
+      await commit('Añadido: '+p.name);break;
+    }
+    case 'delete-pantry':{
+      const p=state.pantry.find(x=>x.id===id);if(!p)return;
+      if(!window.confirm('¿Eliminar «'+p.name+'» de la despensa? No se marcará como agotado.'))return;
+      removeFromPantry(state,id);
+      await commit('Producto eliminado');break;
+    }
     case 'deplete-pantry':{
       const p=state.pantry.find(x=>x.id===id);if(!p)return;
-      markOut(state,p.name);
-      await commit(`${p.name} añadido a la compra`);break;
+      markOut(state,p.name);await commit('Agotado: '+p.name);break;
     }
     case 'new-grocery':openGrocery();break;
     case 'delete-grocery':state.groceries=state.groceries.filter(g=>g.id!==id);await commit('Apunte eliminado');break;
