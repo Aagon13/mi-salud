@@ -8,7 +8,16 @@ export function asBaseUnit(unit:Unit):Unit { return unitGroup(unit); }
 export function pretty(qty:number):string { return Number(qty.toFixed(2)).toLocaleString('es-ES',{maximumFractionDigits:2}); }
 export function optUnits(value:Unit='g'):string { return (['g','kg','ud','ml','l'] as Unit[]).map(u=>`<option value="${u}" ${value===u?'selected':''}>${u}</option>`).join(''); }
 export function positive(value:unknown, fallback=0):number { const n=Number(value); return Number.isFinite(n) && n>0?n:fallback; }
-export function joinKey(name:string,unit:Unit):string { return `${normalizeName(name)}|${unitGroup(unit)}`; }
+/** Igualación conservadora de singular y plural para no duplicar productos. */
+export function productKey(name:string):string {
+  const clean=normalizeName(name).replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/u,'');
+  return clean.split(' ').map(w=>{
+    if(w.length>3 && /[aeio]s$/u.test(w))return w.slice(0,-1);
+    if(w.length>4 && /[^aeiou]es$/u.test(w))return w.slice(0,-2);
+    return w;
+  }).join(' ');
+}
+export function joinKey(name:string,unit:Unit):string { return `${productKey(name)}|${unitGroup(unit)}`; }
 export function readTextFile(file:File):Promise<string> { return file.text(); }
 export async function shrinkPhoto(file:File):Promise<string> {
   if(!file.type.startsWith('image/')) throw Error('El archivo debe ser una imagen.');
