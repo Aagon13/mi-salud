@@ -1,6 +1,7 @@
 import { initialData, missions } from './data/seed.js';
 import { dashboard } from './screens/dashboard.js';
 import { pantry } from './screens/pantry.js';
+import { expenses } from './screens/expenses.js';
 import { planner } from './screens/planner.js';
 import { recipes, recipeDetail } from './screens/recipes.js';
 import { training } from './screens/training.js';
@@ -20,11 +21,15 @@ const TABS = [
   {id:'home',label:'Hoy',icon:'home'},
   {id:'planner',label:'Semana',icon:'calendar'},
   {id:'pantry',label:'Despensa',icon:'basket'},
+  {id:'expenses',label:'Gastos',icon:'wallet'},
   {id:'recipes',label:'Recetas',icon:'book'},
   {id:'training',label:'Entreno',icon:'dumbbell'},
   {id:'health',label:'Salud',icon:'heart'},
+  {id:'more',label:'Más',icon:'grid'},
 ] as const;
 type Tab = typeof TABS[number]['id'];
+const MOBILE_TABS = TABS.filter(t=>['home','planner','pantry','expenses','more'].includes(t.id));
+const DESKTOP_TABS = TABS.filter(t=>t.id!=='more');
 let state:AppData = initialData();
 let current:Tab='home';
 let weekOffset=0;
@@ -40,21 +45,29 @@ function toast(message:string,error=false):void {
   toastRoot.className=`toast visible ${error?'toast-error':''}`;
   window.setTimeout(()=>toastRoot.classList.remove('visible'),3800);
 }
+function moreMenu():string {
+  return `<section class="page-intro"><div class="eyebrow">MIS HERRAMIENTAS</div><h1>Más opciones</h1><p>Entrenamiento, recetas y evolución personal, siempre accesibles.</p></section>
+  <div class="more-menu-grid">
+    <button type="button" class="more-menu-item" data-action="go" data-tab="recipes">${icon('book',29)}<span><b>Recetas</b><small>Platos y preparación de comidas</small></span>${icon('right',20)}</button>
+    <button type="button" class="more-menu-item" data-action="go" data-tab="training">${icon('dumbbell',29)}<span><b>Entreno</b><small>Rutinas, fuerza y progreso</small></span>${icon('right',20)}</button>
+    <button type="button" class="more-menu-item" data-action="go" data-tab="health">${icon('heart',29)}<span><b>Salud</b><small>Peso, descanso y copias de seguridad</small></span>${icon('right',20)}</button>
+  </div>`;
+}
 function render(resetScroll=false):void {
   const scroll=window.scrollY;
   const xp=levelInfo(totalXP(state));
   root.innerHTML=`<div class="app-layout">
     <aside class="sidebar"><div class="brand"> <span class="brand-mark">${icon('heart',24)}</span><div><b>MI SALUD</b><small>TU AVENTURA DIARIA</small></div></div>
     <div class="side-caption">NAVEGACIÓN</div>
-    <nav aria-label="Secciones">${TABS.map(t=>`<button class="nav-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,20)} <span>${t.label}</span></button>`).join('')}</nav>
+    <nav aria-label="Secciones">${DESKTOP_TABS.map(t=>`<button class="nav-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,20)} <span>${t.label}</span></button>`).join('')}</nav>
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
-    <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):health(state)}</main>
-    <footer class="page-footer">Mi Salud · v0.4 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
-    <nav class="bottom-nav" aria-label="Navegación móvil">${TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
+    <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='expenses'?expenses(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):current==='more'?moreMenu():health(state)}</main>
+    <footer class="page-footer">Mi Salud · v0.5 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
+    <nav class="bottom-nav" aria-label="Navegación móvil">${MOBILE_TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
-  if(current==='pantry')showLastAdvice();
+  if(current==='expenses')showLastAdvice();
 }
 async function commit(message='Guardado'):Promise<void>{
   saving=true;
@@ -280,7 +293,7 @@ function buyMissing(name:string,qty:number,unit:Unit):void {
 async function act(action:string,el:HTMLElement):Promise<void>{
   const id=el.dataset.id??'';
   switch(action){
-    case 'go':current=(TABS.find(t=>t.id===el.dataset.tab)?.id??'home');closeModal();render(true);break;
+    case 'go':current=(TABS.find(t=>t.id===el.dataset.tab)?.id??'home');lastAdvice='';closeModal();render(true);break;
     case 'toggle-mission':{if(!missions.some(x=>x.id===id))return;toggleMission(state,localDate(),id);await commit('Progreso actualizado');break;}
     case 'new-pantry':openPantry();break;
     case 'new-purchase':openPurchase();break;

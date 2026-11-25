@@ -2,6 +2,8 @@ import { escapeHTML } from '../lib/helpers.js';
 const paths:Record<string,string>={
  home:'<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>',
  food:'<path d="M4 3v7c0 2 1.5 3 3 3s3-1 3-3V3M7 3v18M17 3c-3 2-4 5-4 8h5V3M18 11v10"/>',
+ wallet:'<rect x="3" y="6" width="18" height="15" rx="3"/><path d="M3 10h18m-7 5h4"/>',
+ grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
  basket:'<path d="M3 10h18l-2 11H5L3 10ZM8 10l4-7 4 7M9 14v3m6-3v3"/>',
  dumbbell:'<path d="M6 7v10M3 9v6m6-10v14m6-14v14m3-12v10m3-8v6M9 12h6"/>',
  heart:'<path d="M20.8 8.7c0 5-8.8 11.2-8.8 11.2S3.2 13.7 3.2 8.7C3.2 5.5 5 4 7.5 4c2.1 0 3.4 1 4.5 2.5C13.1 5 14.4 4 16.5 4c2.5 0 4.3 1.5 4.3 4.7Z"/>',

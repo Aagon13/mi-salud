@@ -54,3 +54,21 @@ details summary{cursor:pointer;font-size:12px;color:#b9d0dd}
 .purchase-history-row .stock-info small{display:block;margin-top:3px}
 .purchase-error:not([hidden]){color:#ffd1d1;background:#562332;padding:10px;border-radius:8px}
 @media(max-width:440px){.buying-controls input{flex-basis:100%}.buying-controls .btn:last-child{flex:1}}
+
+/* Navegación móvil clara de cinco secciones */
+.more-menu-grid{display:grid;gap:13px}
+.more-menu-item{display:flex;align-items:center;gap:16px;width:100%;padding:19px;border:1px solid var(--line);border-radius:15px;background:#182638;color:var(--text);text-align:left;cursor:pointer}
+.more-menu-item>span{display:grid;gap:5px;flex:1}
+.more-menu-item b{font-size:17px}
+.more-menu-item small{font-size:12px;color:var(--muted)}
+.more-menu-item>.icon:first-child{color:#73e1b5}
+.pantry-expense-link{width:100%;border:1px solid #315c57;border-radius:12px;background:#193136;color:#b8eed8;padding:13px;display:flex;gap:9px;align-items:center;justify-content:center;text-align:center;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:18px}
+.expense-overview{display:grid;gap:12px;margin-bottom:10px}
+.expense-total{display:grid;gap:5px;padding:21px;background:linear-gradient(115deg,#17493c,#192e3c);border:1px solid #386659;border-radius:17px}
+.expense-total small{font-size:10px;letter-spacing:.12em;color:#9ad9c4}
+.expense-total strong{font-size:32px;color:#f1fff8}
+.expense-total span{font-size:12px;color:#b5d6ca}
+.expense-quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.expense-quick-actions .btn{justify-content:center;min-height:55px}
+.expense-help{font-size:12px;color:var(--muted);margin-bottom:21px}
+@media(max-width:400px){.expense-quick-actions{grid-template-columns:1fr}.bottom-item{font-size:10px}}
