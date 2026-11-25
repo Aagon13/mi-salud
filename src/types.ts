@@ -15,7 +15,11 @@ export interface Recipe {
 export interface PreparedMeal { id: string; recipeId: string; servings: number; location: 'nevera'|'congelador'; date: string }
 export interface PlannedMeal { id: string; date: string; kind: MealKind; recipeId: string; servings: number }
 export interface GroceryItem { id: string; name: string; quantity: number; unit: Unit }
-export interface PurchaseRecord {id:string;date:string;product:string;store:string;quantity:number;unit:Unit;label?:string;totalPrice?:number;quality?:number;note?:string}
+export interface PurchaseRecord {id:string;date:string;product:string;store:string;quantity:number;unit:Unit;label?:string;totalPrice?:number;quality?:number;note?:string;receiptId?:string}
+export interface ReceiptRecord {
+  id:string; capturedAt:string; date:string; store:string; status:'pending'|'imported';
+  ocrText:string; reviewedText:string; purchaseIds:string[]; photoBytes:number;
+}
 export interface WeightEntry { date: string; weight: number }
 export interface SleepEntry { date: string; hours: number }
 export interface WorkoutEntry { date: string; routineId: string; note: string }
@@ -23,6 +27,8 @@ export interface AppData {
   version: 1; pantry: PantryItem[]; recipes: Recipe[];
   /** Opcional para conservar los datos anteriores. */
   purchases?:PurchaseRecord[];
+  /** Fotos en IndexedDB, metadatos en el mismo estado local de siempre. */
+  receipts?:ReceiptRecord[];
   prepared: PreparedMeal[]; plan: PlannedMeal[]; groceries: GroceryItem[];
   weights: WeightEntry[]; sleep: SleepEntry[]; workouts: WorkoutEntry[];
   completions: Record<string, string[]>;
