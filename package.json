@@ -1,6 +1,6 @@
 {
   "name": "mi-salud-pwa",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "type": "module",
   "description": "Mi Salud: hábitos, compra, planificación de comida y entrenamiento",

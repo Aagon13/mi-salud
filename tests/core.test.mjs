@@ -1,5 +1,7 @@
 import test from 'node:test';
 import { processAssistantMessage } from '../dist/assets/lib/assistant.js';
+import { expenses } from '../dist/assets/screens/expenses.js';
+import { pantry } from '../dist/assets/screens/pantry.js';
 import { registerPurchase, askBuyingAdvice } from '../dist/assets/lib/buyingAdvice.js';
 import assert from 'node:assert/strict';
 import { initialData,missions,routines } from '../dist/assets/data/seed.js';
@@ -148,7 +150,7 @@ test('Evita unidades incompatibles y precios negativos',()=>{
  assert.equal(askBuyingAdvice(s,'polLo').bestValue,undefined);
 });
 
-test('El asistente unifica inventario y consulta de precios sin alterar datos al preguntar',()=>{
+test('El asistente solo modifica despensa y no gestiona preguntas de dónde comprar',()=>{
  const s=initialData();
  const stock=processAssistantMessage(s,'Me quedan 3 huevos');
  assert.equal(stock.changed,true);
@@ -156,11 +158,18 @@ test('El asistente unifica inventario y consulta de precios sin alterar datos al
  const listing=processAssistantMessage(s,'Apunta leche a la compra');
  assert.equal(listing.changed,true);
  assert.equal(shoppingList(s).some(x=>x.name==='leche'),true);
- const before=s.pantry.length;
- const ask=processAssistantMessage(s,'¿Dónde compro mejor el pollo?');
- assert.equal(ask.changed,false);
- assert.match(ask.reply,/Todavía no/);
- assert.equal(s.pantry.length,before);
+ const before=structuredClone(s);
+ assert.throws(()=>processAssistantMessage(s,'¿Dónde compro mejor el pollo?'),/Prueba/);
+ assert.deepEqual(s,before);
+});
+test('Gastos no muestra asistente ni comparaciones; el asistente sigue en Despensa',()=>{
+ const s=initialData();
+ const gastos=expenses(s);
+ assert.doesNotMatch(gastos,/id="form-assistant"|¿Dónde compro|compáralos|conviene comprarlos/);
+ assert.match(gastos,/Tickets guardados/);
+ assert.match(gastos,/Historial de compras/);
+ assert.match(pantry(s),/id="form-assistant"/);
+ assert.doesNotMatch(pantry(s),/¿Dónde compro/);
 });
 test('El asistente no modifica datos ante una frase desconocida',()=>{
  const s=initialData();
