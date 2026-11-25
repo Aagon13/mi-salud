@@ -6,6 +6,7 @@ import { computeCoverage,addToPantry,cookRecipe,enoughForRecipe } from '../dist/
 import { isValidBackup } from '../dist/assets/lib/storage.js';
 import { shoppingList, markOut, purchase, parseQuickCommand, applyQuickCommand } from '../dist/assets/lib/shopping.js';
 import { weekStart,addDays } from '../dist/assets/lib/dates.js';
+import { parseReceiptText,parseReviewedReceipt } from '../dist/assets/lib/receipt.js';
 
 const week='2026-11-23';
 test('XP por misión y niveles acumulativos',()=>{
@@ -89,4 +90,28 @@ test('Los productos no habituales agotados siguen creando un apunte manual',()=>
  assert.equal(s.pantry[0].quantity,0);
  assert.equal(s.groceries.length,1);
  assert.equal(shoppingList(s)[0].quantity,2);
+});
+
+test('Dictado para existencias exactas y lista de compra',()=>{
+  const s=initialData();
+  applyQuickCommand(s,'He comprado 12 huevos');
+  assert.equal(s.pantry[0].quantity,12);
+  applyQuickCommand(s,'Me quedan 3 huevos');
+  assert.equal(s.pantry[0].quantity,3);
+  applyQuickCommand(s,'Apunta café a la compra');
+  assert.equal(shoppingList(s).find(x=>x.name==='café').quantity,1);
+});
+test('Se reconocen líneas comerciales de distintos tickets sin totales',()=>{
+  const raw='MERCADONA\n2 Huevos XL 3,10\nLeche entera 1L 1,05\nTOTAL 4,15\nIVA 0,48';
+  const rows=parseReceiptText(raw);
+  assert.equal(rows.length,2);
+  assert.deepEqual(rows[0],{name:'Huevos XL',quantity:2,unit:'ud'});
+  assert.equal(rows[1].name,'Leche entera 1L');
+  const weighed=parseReceiptText('0,350 kg Manzanas 1,19\nTARJETA 3,00');
+  assert.deepEqual(weighed[0],{name:'Manzanas',quantity:0.35,unit:'kg'});
+});
+test('Se validan los artículos revisados antes de importarlos',()=>{
+  const r=parseReviewedReceipt('Leche | 2 | l\nHuevos | 12 | ud');
+  assert.equal(r.length,2);
+  assert.throws(()=>parseReviewedReceipt('TOTAL | 1 | euros'),/Línea 1/);
 });

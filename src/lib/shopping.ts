@@ -75,34 +75,73 @@ export function cleanName(name:string):string {
 
 export type QuickCommand =
   | { action:'out'; name:string }
-  | { action:'bought'; name:string; quantity:number; unit:Unit|null };
+  | { action:'bought'|'set'|'list'; name:string; quantity:number; unit:Unit|null };
 
-/** Intencionadamente sin IA: se pueden dictar estas frases con el micrófono del teclado. */
+const QUANTITY=/^(\d+(?:[.,]\d+)?)\s*(kg|kilos?|kilogramos?|gramos?|g|litros?|l|mililitros?|ml|unidades?|ud|botellas?|paquetes?|botes?|latas?)?\s*(?:de\s+)?(.+)$/iu;
+function readQuantity(value:string):{name:string;quantity:number;unit:Unit|null} {
+  const match=value.match(QUANTITY);
+  let quantity=1, unit:Unit|null=null, name=cleanName(value);
+  if(match){
+    quantity=Number(match[1].replace(',','.'));
+    const word=normalizeName(match[2]??'');
+    unit=!word?null:word.startsWith('kg')||word.startsWith('kilo')?'kg':word.startsWith('g')?'g':word.startsWith('mili')||word==='ml'?'ml':word.startsWith('l')?'l':'ud';
+    name=cleanName(match[3]);
+  }
+  if(!name||name.length>80||!Number.isFinite(quantity)||quantity<0||quantity>100000)
+    throw Error('Revisa el nombre y la cantidad del producto.');
+  return {name,quantity,unit};
+}
+
+/** Frases habituales que también se pueden dictar con el micrófono del teclado. */
 export function parseQuickCommand(text:string):QuickCommand {
   const raw=text.trim();
-  const out = raw.match(/^(?:(?:se\s+me\s+ha[n]?|se\s+ha[n]?)\s+(?:terminado|acabado)|(?:no\s+me\s+queda[n]?|ya\s+no\s+tengo|no\s+tengo|no\s+queda[n]?|me\s+he\s+quedado\s+sin|se\s+acab[oó]))\s+(.+)$/iu);
-  if(out) {
+  const out=raw.match(/^(?:(?:se\s+me\s+ha[n]?|se\s+ha[n]?)\s+(?:terminado|acabado)|(?:no\s+me\s+queda[n]?|ya\s+no\s+tengo|no\s+tengo|no\s+queda[n]?|me\s+he\s+quedado\s+sin|se\s+acab[oó]))\s+(.+)$/iu);
+  if(out){
     const name=cleanName(out[1]);
-    if(!name || name.length>80)throw Error('Nombre de producto no válido.');
+    if(!name||name.length>80)throw Error('Nombre de producto no válido.');
     return {action:'out',name};
   }
-  const bought=raw.match(/^(?:he\s+comprado|compr[eé]|he\s+pillado)\s+(\d+(?:[.,]\d+)?)\s*(kg|kilos?|kilogramos?|gramos?|g|litros?|l|mililitros?|ml|unidades?|ud|botellas?|paquetes?)?\s*(?:de\s+)?(.+)$/iu);
-  if(bought) {
-    const quantity=Number(bought[1].replace(',','.'));
-    const name=cleanName(bought[3]);
-    if(!Number.isFinite(quantity)||quantity<=0||quantity>100000||!name||name.length>80)throw Error('Revisa el producto y la cantidad.');
-    const spoken=normalizeName(bought[2]??'');
-    const unit:Unit|null = !spoken ? null : /^k/.test(spoken)?'kg':/^g/.test(spoken)?'g':/^ml|^mili/.test(spoken)?'ml':/^l/.test(spoken)?'l':'ud';
-    return {action:'bought',name,quantity,unit};
+  const bought=raw.match(/^(?:he\s+comprado|compr[eé]|he\s+pillado|he\s+tra[ií]do)\s+(.+)$/iu);
+  if(bought){
+    const parsed=readQuantity(bought[1]);
+    if(parsed.quantity<=0)throw Error('Indica cuánto has comprado.');
+    return {action:'bought',...parsed};
   }
-  throw Error('Prueba «Se me ha terminado la leche» o «He comprado 2 litros de leche».');
+  const stock=raw.match(/^(?:me\s+queda[n]?|tengo|quedan|ahora\s+tengo)\s+(.+)$/iu);
+  if(stock) return {action:'set',...readQuantity(stock[1])};
+  const shopping=raw.match(/^(?:(?:apunta|pon|a[nñ]ade|agrega|mete)\s+|(?:me\s+falta[n]?|necesito|hay\s+que\s+comprar)\s+)(.+)$/iu);
+  if(shopping){
+    const value=shopping[1].replace(/\s+(?:a|en|para)\s+(?:la\s+)?(?:lista\s+de\s+)?(?:la\s+)?compra$/iu,'');
+    return {action:'list',...readQuantity(value)};
+  }
+  throw Error('Prueba «Me quedan 3 huevos», «Se acabó la leche», «He comprado 2 litros de leche» o «Apunta arroz a la compra».');
 }
 
 export function applyQuickCommand(s:AppData, text:string):string {
-  const command=parseQuickCommand(text);
-  if(command.action==='out') return `${markOut(s,command.name)} añadido a la compra`;
-  const p=s.pantry.find(x=>normalizeName(x.name)===normalizeName(command.name));
-  const unit=command.unit ?? p?.unit ?? 'ud';
-  purchase(s,command.name,command.quantity,unit);
-  return `${command.name} añadido a la despensa`;
+  const cmd=parseQuickCommand(text);
+  if(cmd.action==='out') return markOut(s,cmd.name)+' añadido a la compra';
+  const existing=s.pantry.find(x=>normalizeName(x.name)===normalizeName(cmd.name));
+  const unit=cmd.unit??existing?.unit??'ud';
+  if(cmd.action==='list'){
+    const old=s.groceries.find(x=>joinKey(x.name,x.unit)===joinKey(cmd.name,unit));
+    if(old)old.quantity=Math.max(old.quantity,cmd.quantity);
+    else s.groceries.push({id:crypto.randomUUID(),name:cmd.name,quantity:Math.max(cmd.quantity,1),unit});
+    return cmd.name+' apuntado a la compra';
+  }
+  if(cmd.action==='set'){
+    if(existing){
+      if(joinKey(existing.name,existing.unit)!==joinKey(cmd.name,unit))
+        throw Error('La unidad no coincide con la que ya tienes. Modifícala desde «Editar producto».');
+      existing.quantity=toBase(cmd.quantity,unit)/toBase(1,existing.unit);
+      existing.updatedAt=new Date().toISOString();
+    } else {
+      addToPantry(s,cmd.name,cmd.quantity,unit);
+      const added=s.pantry.find(x=>joinKey(x.name,x.unit)===joinKey(cmd.name,unit));
+      if(added){added.habitual=true;added.minStock=1;added.restockQuantity=Math.max(1,cmd.quantity);}
+    }
+    return 'Existencias actualizadas: '+cmd.name;
+  }
+  if(cmd.quantity<=0)throw Error('Indica cuánto has comprado.');
+  purchase(s,cmd.name,cmd.quantity,unit);
+  return cmd.name+' añadido a la despensa';
 }
