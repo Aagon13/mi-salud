@@ -12,7 +12,8 @@ import { toggleMission, levelInfo, totalXP } from './lib/progress.js';
 import { addToPantry, cookRecipe, enoughForRecipe, computeCoverage } from './lib/planner.js';
 import { applyQuickCommand, markOut, purchase, shoppingList } from './lib/shopping.js';
 import { parseReceiptText, parseReviewedReceipt } from './lib/receipt.js';
-import { askBuyingAdvice, registerPurchase } from './lib/buyingAdvice.js';
+import { registerPurchase } from './lib/buyingAdvice.js';
+import { processAssistantMessage } from './lib/assistant.js';
 import { escapeHTML as esc, optUnits, positive, uid, shrinkPhoto, normalizeName, joinKey } from './lib/helpers.js';
 import { icon } from './ui/icons.js';
 import type { AppData, Ingredient, Recipe, Unit, PurchaseRecord } from './types.js';
@@ -63,11 +64,10 @@ function render(resetScroll=false):void {
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
     <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='expenses'?expenses(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):current==='more'?moreMenu():health(state)}</main>
-    <footer class="page-footer">Mi Salud · v0.5 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
+    <footer class="page-footer">Mi Salud · v0.6 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
     <nav class="bottom-nav" aria-label="Navegación móvil">${MOBILE_TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
-  if(current==='expenses')showLastAdvice();
 }
 async function commit(message='Guardado'):Promise<void>{
   saving=true;
@@ -133,19 +133,16 @@ async function savePurchase():Promise<void>{
   } else registerPurchase(state,entry,fd.has('addStock'));
   closeModal();await commit(previous?'Compra actualizada':'Compra y valoración guardadas');
 }
-let lastAdvice='';
-function askFromPantry():void{
-  const input=root.querySelector<HTMLInputElement>('#buying-question');
-  if(!input)throw Error('No se encuentra la pregunta.');
-  const result=askBuyingAdvice(state,input.value);
-  lastAdvice=result.answer;
-  const panel=root.querySelector<HTMLElement>('#buying-answer');
-  if(panel){panel.textContent=lastAdvice;panel.hidden=false;}
-}
-function showLastAdvice():void{
-  if(!lastAdvice)return;
-  const panel=root.querySelector<HTMLElement>('#buying-answer');
-  if(panel){panel.textContent=lastAdvice;panel.hidden=false;}
+let lastAssistantReply='';
+async function sendAssistantMessage(message:string):Promise<void>{
+  const result=processAssistantMessage(state,message);
+  lastAssistantReply=result.reply;
+  if(result.changed){
+    await commit('Apuntado en Mi Salud');
+  }else{
+    const panel=root.querySelector<HTMLElement>('#assistant-answer');
+    if(panel){panel.textContent=result.reply;panel.hidden=false;}
+  }
 }
 type BrowserSpeechResult={results:ArrayLike<ArrayLike<{transcript:string}>>};
 type BrowserRecognizer={lang:string;interimResults:boolean;maxAlternatives:number;onresult:((e:BrowserSpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;start:()=>void};
@@ -153,12 +150,12 @@ function startVoiceQuestion():void{
   const speechWindow=window as Window & {SpeechRecognition?:new()=>BrowserRecognizer;webkitSpeechRecognition?:new()=>BrowserRecognizer};
   const Recognition=speechWindow.SpeechRecognition??speechWindow.webkitSpeechRecognition;
   if(!Recognition){toast('El dictado directo no está disponible en este navegador. Usa el micrófono del teclado.',true);return;}
-  const input=root.querySelector<HTMLInputElement>('#buying-question');
+  const input=root.querySelector<HTMLInputElement>('#assistant-message');
   if(!input)return;
   const recognizer=new Recognition();recognizer.lang='es-ES';recognizer.interimResults=false;recognizer.maxAlternatives=1;
   recognizer.onresult=e=>{
     input.value=e.results[0]?.[0]?.transcript??'';
-    if(input.value)askFromPantry();
+    if(input.value)void sendAssistantMessage(input.value).catch(err=>toast(err instanceof Error?err.message:'No se pudo interpretar',true));
   };
   recognizer.onerror=e=>toast('No se pudo escuchar: '+e.error,true);
   recognizer.onend=()=>{};
@@ -305,7 +302,7 @@ function buyMissing(name:string,qty:number,unit:Unit):void {
 async function act(action:string,el:HTMLElement):Promise<void>{
   const id=el.dataset.id??'';
   switch(action){
-    case 'go':current=(TABS.find(t=>t.id===el.dataset.tab)?.id??'home');lastAdvice='';closeModal();render(true);break;
+    case 'go':current=(TABS.find(t=>t.id===el.dataset.tab)?.id??'home');closeModal();render(true);break;
     case 'toggle-mission':{if(!missions.some(x=>x.id===id))return;toggleMission(state,localDate(),id);await commit('Progreso actualizado');break;}
     case 'new-pantry':openPantry();break;
     case 'new-purchase':openPurchase();break;
@@ -325,8 +322,12 @@ async function act(action:string,el:HTMLElement):Promise<void>{
       state.purchases=(state.purchases??[]).filter(x=>x.id!==id);
       await commit('Registro eliminado');break;
     }
-    case 'ask-buying':askFromPantry();break;
-    case 'voice-buying':startVoiceQuestion();break;
+    case 'assistant-voice':startVoiceQuestion();break;
+    case 'assistant-example':{
+      const input=root.querySelector<HTMLInputElement>('#assistant-message');
+      if(input){input.value=el.dataset.text??'';input.focus({preventScroll:true});}
+      break;
+    }
     case 'open-receipt':openReceipt();break;
     case 'pick-receipt-camera':modalRoot.querySelector<HTMLInputElement>('#receipt-photo-camera')?.click();break;
     case 'pick-receipt-gallery':modalRoot.querySelector<HTMLInputElement>('#receipt-photo-gallery')?.click();break;
@@ -431,6 +432,9 @@ async function submit(form:HTMLFormElement):Promise<void> {
     case 'form-pantry-quick':{
       const message=applyQuickCommand(state,str('phrase'));
       await commit(message);break;
+    }
+    case 'form-assistant':{
+      await sendAssistantMessage(str('message'));break;
     }
     case 'form-grocery':{
       const name=str('productName'),qty=num('quantity'),unit=str('unit') as Unit;

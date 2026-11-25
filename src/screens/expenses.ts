@@ -1,4 +1,5 @@
-import { icon, pill } from '../ui/icons.js';
+import { icon } from '../ui/icons.js';
+import { assistantCard } from '../ui/assistantCard.js';
 import { escapeHTML, pretty } from '../lib/helpers.js';
 import { monthSpending } from '../lib/buyingAdvice.js';
 import type { AppData } from '../types.js';
@@ -8,7 +9,6 @@ export function expenses(s:AppData):string{
   const today=new Date().toISOString().slice(0,7);
   const monthly=monthSpending(s,today);
   const money=(n:number)=>n.toLocaleString('es-ES',{style:'currency',currency:'EUR'});
-  const sample=purchases.length?'¿Dónde compro mejor '+purchases[0].product+'?':'¿Dónde compro mejor el pollo?';
   return `<section class="page-intro">
     <div class="eyebrow">MIS COMPRAS</div>
     <h1>Compras y gastos</h1>
@@ -26,17 +26,7 @@ export function expenses(s:AppData):string{
     </div>
   </div>
   <p class="expense-help">Puedes fotografiar el ticket desde aquí o registrar una compra sin ticket. Revisa los productos antes de guardarlos.</p>
-    <section class="card buying-card">
-      <div class="section-heading"><h2>Asistente de compras</h2>${pill("Tus precios y gustos","green")}</div>
-      <p>Pregúntame dónde te conviene comprar algo. Comparo tus precios pagados y tus valoraciones, sin inventar precios actuales.</p>
-      <div class="buying-controls">
-        <input id="buying-question" maxlength="170" autocomplete="off" aria-label="Pregunta sobre tus compras" placeholder="${escapeHTML(sample)}">
-        <button type="button" class="btn btn-secondary" data-action="voice-buying" aria-label="Dictar pregunta">🎙️</button>
-        <button type="button" class="btn btn-primary" data-action="ask-buying">Preguntar</button>
-      </div>
-      <div class="buying-answer" id="buying-answer" role="status" aria-live="polite" hidden></div>
-      <small>El micrófono directo depende del navegador. También puedes dictar en el teclado del móvil.</small>
-    </section>
+    ${assistantCard()}
     <section class="card purchase-history-card">
       <div class="section-heading"><h2>Historial de compras</h2><button class="btn btn-secondary btn-compact" data-action="new-purchase">${icon("plus",16)} Registrar compra</button></div>
       <div class="purchase-summary"><b>${money(monthly.total)}</b><span>Registrado en ${today} · ${monthly.entries} artículos con precio</span></div>

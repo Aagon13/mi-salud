@@ -1,4 +1,5 @@
 import { icon, pill } from '../ui/icons.js';
+import { assistantCard } from '../ui/assistantCard.js';
 import { escapeHTML, pretty } from '../lib/helpers.js';
 import { shoppingList } from '../lib/shopping.js';
 import { computeCoverage } from '../lib/planner.js';
@@ -9,10 +10,7 @@ export function pantry(s:AppData):string {
   const sorted=[...s.pantry].sort((a,b)=>Number(Boolean(b.habitual))-Number(Boolean(a.habitual))||a.name.localeCompare(b.name,'es'));
   const shopping=shoppingList(s,computeCoverage(s,currentWeek()).missing);
   return `<section class="page-intro"><div class="eyebrow">ALIMENTACIÓN</div><h1>Mi despensa</h1><p>Controla tus existencias y prepara la lista de la compra. Los precios y tickets están en «Gastos».</p></section>
-    <div class="card quick-pantry-card"><div class="section-heading"><h2>Apúntalo en segundos</h2>${pill('Rápido','green')}</div>
-      <form id="form-pantry-quick" class="quick-pantry-form"><input name="phrase" maxlength="140" required autocomplete="off" aria-label="Escribe o dicta un movimiento de despensa" placeholder="Se me ha terminado la leche"><button class="btn btn-primary" type="submit">${icon('check',17)} Apuntar</button></form>
-      <p>También: «Me quedan 3 huevos», «He comprado 2 litros de leche» o «Apunta café a la compra». Puedes dictarlo con el micrófono del teclado.</p>
-    </div>
+    ${assistantCard()}
     <div class="toolbar pantry-toolbar"><button class="btn btn-primary" data-action="new-pantry">${icon('plus',17)} Añadir producto</button><button class="btn btn-secondary" data-action="new-grocery">${icon('list',17)} Añadir a la lista</button></div><button class="pantry-expense-link" type="button" data-action="go" data-tab="expenses">${icon('camera',17)} ¿Has comprado algo? Regístralo en Compras y gastos ${icon('right',16)}</button>
     <div class="summary-strip"><div><b>${sorted.filter(x=>x.quantity>0).length}</b><small>En casa</small></div><div><b>${sorted.filter(x=>x.habitual).length}</b><small>Habituales</small></div><div><b>${shopping.length}</b><small>Por comprar</small></div></div>
     <div class="section-heading"><h2>Lista de la compra</h2><button class="text-link" data-action="copy-shopping">${icon('list',15)} Copiar lista</button></div>
