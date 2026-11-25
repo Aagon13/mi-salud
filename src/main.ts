@@ -10,6 +10,7 @@ import { loadData, saveData, isValidBackup, downloadBackup } from './lib/storage
 import { toggleMission, levelInfo, totalXP } from './lib/progress.js';
 import { addToPantry, cookRecipe, enoughForRecipe, computeCoverage } from './lib/planner.js';
 import { applyQuickCommand, markOut, purchase, shoppingList } from './lib/shopping.js';
+import { parseReceiptText, parseReviewedReceipt } from './lib/receipt.js';
 import { escapeHTML as esc, optUnits, positive, uid, shrinkPhoto, normalizeName, joinKey } from './lib/helpers.js';
 import { icon } from './ui/icons.js';
 import type { AppData, Ingredient, Recipe, Unit } from './types.js';
@@ -48,7 +49,7 @@ function render(resetScroll=false):void {
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
     <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):health(state)}</main>
-    <footer class="page-footer">Mi Salud · v0.2.2 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
+    <footer class="page-footer">Mi Salud · v0.3 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
     <nav class="bottom-nav" aria-label="Navegación móvil">${TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
@@ -82,6 +83,73 @@ function openPantry(id?:string):void{
     <div class="form-pair">${field('Avisarme si tengo menos de',numberField('minStock',p?.minStock??1,'0.01'))}${field('Cantidad que quiero tener',numberField('restockQuantity',p?.restockQuantity??Math.max(p?.quantity??1,1),'0.01'))}</div>
     <p class="note">Ejemplo: mínimo 1 y objetivo 3 → si quedan 0, añade 3; si quedan 0,5, añade 2,5.</p>
     <p class="pantry-form-error" role="alert" aria-live="polite" hidden></p><button class="btn btn-primary btn-wide" type="button" data-action="save-pantry">${icon('save',18)} Guardar producto</button></form>`);
+}
+function openReceipt():void{
+  showModal(modalHeading('Importar ticket','Fotografía de cualquier supermercado. Revisa los artículos antes de guardar.') +
+    '<p class="receipt-helper">La lectura se hace en tu móvil. Necesita internet para descargar el lector la primera vez; no se envían las fotos a una IA.</p>' +
+    '<div class="form-grid">' +
+    field('Foto del ticket','<input id="receipt-photo" type="file" accept="image/*" capture="environment">') +
+    '<button type="button" class="btn btn-secondary btn-wide" data-action="scan-receipt">Leer foto del ticket</button>' +
+    '<p class="receipt-status" role="status" aria-live="polite">Selecciona una foto y pulsa «Leer foto».</p>' +
+    field('Productos detectados · revisa y corrige','<textarea id="receipt-reviewed" rows="9" placeholder="Leche | 2 | l&#10;Huevos | 12 | ud" spellcheck="false"></textarea>') +
+    '<small class="receipt-format">Una línea por artículo: nombre | cantidad | unidad (ud, g, kg, ml, l). Borra las líneas incorrectas.</small>' +
+    '<details><summary>Ver texto original del ticket</summary><pre id="receipt-raw" class="receipt-raw">Todavía no se ha leído ninguna foto.</pre></details>' +
+    '<button type="button" class="btn btn-primary btn-wide" data-action="save-receipt">Confirmar y añadir productos</button></div>');
+}
+type ReceiptWorker={recognize:(image:File)=>Promise<{data:{text:string}}>;terminate:()=>Promise<unknown>};
+type OCRLibrary={createWorker:(language:string,mode:number,options:{logger:(progress:{status?:string;progress?:number})=>void})=>Promise<ReceiptWorker>};
+let readerLibrary:Promise<OCRLibrary>|undefined;
+function loadReceiptReader():Promise<OCRLibrary>{
+  if(readerLibrary)return readerLibrary;
+  readerLibrary=new Promise<OCRLibrary>((resolve,reject)=>{
+    const loaded=(window as Window & {Tesseract?:OCRLibrary}).Tesseract;
+    if(loaded){resolve(loaded);return;}
+    const script=document.createElement('script');
+    script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    script.async=true;
+    script.onload=()=>{const lib=(window as Window & {Tesseract?:OCRLibrary}).Tesseract;
+      if(lib)resolve(lib);else reject(Error('No se ha podido iniciar el lector del ticket.'));};
+    script.onerror=()=>reject(Error('No se pudo descargar el lector. Comprueba que tienes internet.'));
+    document.head.append(script);
+  }).catch(err=>{readerLibrary=undefined;throw err;});
+  return readerLibrary;
+}
+async function scanReceipt():Promise<void>{
+  const file=modalRoot.querySelector<HTMLInputElement>('#receipt-photo')?.files?.[0];
+  if(!file)throw Error('Primero selecciona o haz una foto del ticket.');
+  if(!file.type.startsWith('image/')||file.size>12_000_000)throw Error('Utiliza una imagen de menos de 12 MB.');
+  const label=modalRoot.querySelector<HTMLElement>('.receipt-status');
+  const reviewed=modalRoot.querySelector<HTMLTextAreaElement>('#receipt-reviewed');
+  const raw=modalRoot.querySelector<HTMLElement>('#receipt-raw');
+  const button=modalRoot.querySelector<HTMLButtonElement>('[data-action="scan-receipt"]');
+  if(!label||!reviewed||!raw||!button)return;
+  button.disabled=true;label.textContent='Preparando el reconocimiento…';
+  let worker:ReceiptWorker|undefined;
+  try {
+    const reader=await loadReceiptReader();
+    worker=await reader.createWorker('spa',1,{logger:progress=>{
+      if(label.isConnected)label.textContent=(progress.status??'Leyendo imagen')+' '+(progress.progress===undefined?'':Math.round(progress.progress*100)+' %');
+    }});
+    const result=await worker.recognize(file);
+    raw.textContent=result.data.text||'No se ha podido reconocer texto.';
+    const items=parseReceiptText(result.data.text||'');
+    reviewed.value=items.map(x=>x.name+' | '+x.quantity+' | '+x.unit).join('\n');
+    label.textContent=items.length?'Detectados '+items.length+' posibles productos. Revísalos antes de confirmar.':'No se encontraron productos fiables. Revisa el texto y escribe los artículos manualmente.';
+  }catch(err){
+    const message=err instanceof Error?err.message:'Error leyendo el ticket.';
+    label.textContent=message;toast(message,true);
+  }finally{
+    if(worker)await worker.terminate().catch(()=>undefined);
+    if(button.isConnected)button.disabled=false;
+  }
+}
+async function saveReceipt():Promise<void>{
+  const field=modalRoot.querySelector<HTMLTextAreaElement>('#receipt-reviewed');
+  if(!field)throw Error('No se encuentra la revisión del ticket.');
+  const items=parseReviewedReceipt(field.value);
+  if(!window.confirm('Vas a añadir '+items.length+' productos a la despensa. ¿Continuar?'))return;
+  for(const item of items)purchase(state,item.name,item.quantity,item.unit);
+  closeModal();await commit(items.length+' productos añadidos a la despensa');
 }
 function openGrocery():void{
   showModal(`${modalHeading('Añadir a la compra')}<form id="form-grocery" class="form-grid" autocomplete="off">
@@ -147,6 +215,9 @@ async function act(action:string,el:HTMLElement):Promise<void>{
     case 'go':current=(TABS.find(t=>t.id===el.dataset.tab)?.id??'home');closeModal();render(true);break;
     case 'toggle-mission':{if(!missions.some(x=>x.id===id))return;toggleMission(state,localDate(),id);await commit('Progreso actualizado');break;}
     case 'new-pantry':openPantry();break;
+    case 'open-receipt':openReceipt();break;
+    case 'scan-receipt':await scanReceipt();break;
+    case 'save-receipt':await saveReceipt();break;
     case 'save-pantry':{
       const form=modalRoot.querySelector<HTMLFormElement>('#form-pantry');
       if(!form){toast('No se encontró el formulario de producto.',true);return;}
