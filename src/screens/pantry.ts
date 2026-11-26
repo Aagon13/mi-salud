@@ -1,36 +1,122 @@
 import { icon } from '../ui/icons.js';
 import { assistantCard } from '../ui/assistantCard.js';
-import { escapeHTML, pretty } from '../lib/helpers.js';
+import { escapeHTML, joinKey, pretty } from '../lib/helpers.js';
+import { estimateShoppingPrice, latestPantryPrices } from '../lib/pantryPrices.js';
 import { shoppingList } from '../lib/shopping.js';
 import { computeCoverage } from '../lib/planner.js';
 import { currentWeek } from '../lib/dates.js';
 import type { AppData } from '../types.js';
 
-export function pantry(s:AppData):string {
-  const sorted=[...s.pantry].sort((a,b)=>Number(Boolean(b.habitual))-Number(Boolean(a.habitual))||a.name.localeCompare(b.name,'es'));
-  const shopping=shoppingList(s,computeCoverage(s,currentWeek()).missing);
-  return `<section class="page-intro"><div class="eyebrow">ALIMENTACIÓN</div><h1>Mi despensa</h1></section>
-    ${assistantCard()}
-    <div class="toolbar pantry-toolbar"><button class="btn btn-primary" data-action="new-pantry">${icon('plus',17)} Producto</button><button class="btn btn-secondary" data-action="new-grocery">${icon('list',17)} Lista de compra</button></div>
-    <div class="summary-strip"><div><b>${sorted.filter(x=>x.quantity>0).length}</b><small>En casa</small></div><div><b>${sorted.filter(x=>x.habitual).length}</b><small>Habituales</small></div><div><b>${shopping.length}</b><small>Por comprar</small></div></div>
-    <div class="section-heading"><h2>Por comprar</h2><button class="text-link" data-action="copy-shopping">${icon('list',15)} Copiar lista</button></div>
-    <div class="card list-card">${shopping.length===0?`<div class="empty-sm"><p>No tienes nada pendiente.</p></div>`:
-      shopping.map(g=>`<div class="stock-row"><div class="stock-icon empty-stock">${icon('basket',17)}</div><div class="stock-info"><b>${escapeHTML(g.name)}</b><small>${pretty(g.quantity)} ${g.unit} · ${escapeHTML(g.reasons.join(' + '))}</small></div><button class="btn btn-compact" data-action="buy-shopping" data-name="${escapeHTML(g.name)}" data-qty="${g.quantity}" data-unit="${g.unit}">Comprado</button>${g.manualIds.length?`<button class="icon-btn danger" data-action="delete-grocery" data-id="${escapeHTML(g.manualIds[0])}" aria-label="Quitar apunte">${icon('trash',15)}</button>`:''}</div>`).join('')}
+const euro = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
+
+export function pantry(s: AppData, voiceOpen = false): string {
+  const inventory = [...s.pantry].sort((a, b) =>
+    Number(Boolean(b.habitual)) - Number(Boolean(a.habitual)) || a.name.localeCompare(b.name, 'es'));
+  const inStock = inventory.filter(item => item.quantity > 0).length;
+  const prices = latestPantryPrices(s.purchases ?? []);
+  const shopping = shoppingList(s, computeCoverage(s, currentWeek()).missing).map(item => ({
+    ...item, estimate: estimateShoppingPrice(item, prices.get(joinKey(item.name, item.unit))),
+  }));
+  const priced = shopping.filter(item => item.estimate !== undefined);
+  const subtotal = priced.reduce((sum, item) => sum + (item.estimate ?? 0), 0);
+
+  const inventoryRows = inventory.map(item => {
+    const name = escapeHTML(item.name);
+    const id = escapeHTML(item.id);
+    const price = prices.get(joinKey(item.name, item.unit));
+    const low = item.habitual && item.quantity + 1e-9 < Math.max(0.01, item.minStock ?? 1);
+    const stock = item.quantity <= 0 ? '<span class="pantry-stock-low">Agotado</span>'
+      : `${pretty(item.quantity)} ${item.unit}${low ? ' · <span class="pantry-stock-low">Queda poco</span>' : ''}`;
+    return `<li class="pantry-item pantry-inventory-item">
+      <div class="pantry-item-info"><strong>${name}</strong><small>${stock}${item.habitual ? ' · Habitual' : ''}</small></div>
+      <div class="pantry-item-price">${price ? `<strong>${euro.format(price.amount)} / ${price.unitLabel}</strong><small>Último precio · ${escapeHTML(price.store)}</small>` : '<small class="pantry-price-missing">Sin precio</small>'}</div>
+      <div class="pantry-item-actions">
+        <button type="button" class="icon-btn pantry-adjust" data-action="pantry-minus" data-id="${id}" aria-label="Descontar cantidad de ${name}" title="Descontar cantidad">${icon('minus', 17)}</button>
+        <button type="button" class="icon-btn pantry-adjust" data-action="pantry-plus" data-id="${id}" aria-label="Aumentar cantidad de ${name}" title="Aumentar cantidad">${icon('plus', 17)}</button>
+        <button type="button" class="icon-btn" data-action="edit-pantry" data-id="${id}" aria-label="Editar ${name}" title="Editar producto">${icon('edit', 17)}</button>
+        <button type="button" class="icon-btn danger" data-action="delete-pantry" data-id="${id}" aria-label="Eliminar ${name}" title="Eliminar producto">${icon('trash', 17)}</button>
+      </div>
+    </li>`;
+  }).join('');
+
+  const shoppingRows = shopping.map(item => {
+    const name = escapeHTML(item.name);
+    const itemData = `data-name="${name}" data-qty="${item.quantity}" data-unit="${item.unit}"`;
+    return `<li class="pantry-item pantry-shopping-item">
+      <div class="pantry-item-info"><strong>${name}</strong><small>${pretty(item.quantity)} ${item.unit} · ${escapeHTML(item.reasons.join(' + '))}</small></div>
+      <div class="pantry-item-price">${item.estimate === undefined ? '<small class="pantry-price-missing">Sin precio</small>' : `<strong>${euro.format(item.estimate)}</strong><small>Estimado</small>`}</div>
+      <div class="pantry-item-actions">
+        <button type="button" class="btn btn-compact" data-action="buy-shopping" ${itemData} aria-label="Marcar ${name} como comprado">${icon('check', 16)} Comprado</button>
+        <button type="button" class="icon-btn" data-action="new-purchase" data-stock="true" ${itemData} aria-label="Registrar el precio de ${name}" title="Registrar compra con precio">${icon('wallet', 17)}</button>
+        ${item.manualIds.length ? `<button type="button" class="icon-btn danger" data-action="delete-grocery" data-id="${escapeHTML(item.manualIds[0])}" aria-label="Quitar ${name} de la lista" title="Quitar apunte">${icon('trash', 17)}</button>` : ''}
+      </div>
+    </li>`;
+  }).join('');
+  const completeEstimate = priced.length === shopping.length;
+  const estimate = priced.length ? `<div><b>${completeEstimate ? 'Total estimado' : 'Total estimado parcial'}</b>
+    <small>${completeEstimate ? 'Según tus últimas compras' : `${priced.length} de ${shopping.length} con precio`}</small></div><strong>${euro.format(subtotal)}</strong>`
+    : '<b>Sin precios registrados</b>';
+
+  const preparedRows = s.prepared.map(item => {
+    const recipe = s.recipes.find(recipe => recipe.id === item.recipeId);
+    return `<li class="pantry-item">
+      <div class="pantry-item-info"><strong>${escapeHTML(recipe?.name ?? 'Receta eliminada')}</strong>
+        <small>${pretty(item.servings)} ración/es · ${escapeHTML(item.location)} · ${escapeHTML(item.date)}</small></div>
+      <div class="pantry-item-actions"><button type="button" class="btn btn-compact" data-action="consume-prepared" data-id="${escapeHTML(item.id)}">Comer 1</button></div>
+    </li>`;
+  }).join('');
+
+  return `<div class="pantry-page">
+    <header class="pantry-hero">
+      <div class="pantry-hero-copy"><h1>Mi despensa</h1></div>
+      <nav class="pantry-overview" aria-label="Ir a una sección de Despensa">
+        <a class="pantry-overview-link" href="#pantry-inventory">${icon('fridge', 19)}<span class="pantry-overview-label">En casa</span><strong>${inStock}</strong></a>
+        <a class="pantry-overview-link" href="#pantry-shopping">${icon('basket', 19)}<span class="pantry-overview-label">Por comprar</span><strong>${shopping.length}</strong></a>
+      </nav>
+    </header>
+    <section class="pantry-entry" aria-labelledby="pantry-entry-title">
+      <h2 id="pantry-entry-title">Añadir y registrar</h2>
+      <div class="pantry-entry-grid">
+        <button type="button" class="pantry-entry-action pantry-entry-primary" data-action="new-pantry"><span class="pantry-entry-icon">${icon('plus', 19)}</span><b>Añadir a despensa</b></button>
+        <button type="button" class="pantry-entry-action" data-action="new-grocery"><span class="pantry-entry-icon">${icon('list', 19)}</span><b>Añadir a la lista</b></button>
+        <button type="button" class="pantry-entry-action" data-action="new-purchase" data-stock="true"><span class="pantry-entry-icon">${icon('wallet', 19)}</span><b>Registrar compra</b></button>
+        <button type="button" class="pantry-entry-action" data-action="open-receipt"><span class="pantry-entry-icon">${icon('camera', 19)}</span><b>Foto de ticket</b></button>
+      </div>
+      <details class="pantry-voice"${voiceOpen ? ' open' : ''}>
+        <summary>${icon('mic', 18)}<b>Añadir por voz</b>${icon('right', 16)}</summary>
+        ${assistantCard()}
+      </details>
+    </section>
+
+    <div class="pantry-columns">
+      <section class="pantry-panel" id="pantry-inventory" aria-labelledby="pantry-inventory-title" tabindex="-1">
+        <header class="pantry-panel-head"><div class="pantry-panel-title">
+          <span class="pantry-section-icon">${icon('fridge', 21)}</span>
+          <div><h2 id="pantry-inventory-title">En casa</h2><p>${inStock} de ${inventory.length} con existencias</p></div>
+        </div></header>
+        ${inventoryRows ? `<ul class="pantry-rows">${inventoryRows}</ul>` : `<div class="pantry-empty">
+          ${icon('fridge', 24)}<p>Tu despensa está vacía.</p><button type="button" class="btn btn-secondary" data-action="new-pantry">Añadir producto</button>
+        </div>`}
+      </section>
+
+      <section class="pantry-panel" id="pantry-shopping" aria-labelledby="pantry-shopping-title" tabindex="-1">
+        <header class="pantry-panel-head">
+          <div class="pantry-panel-title"><span class="pantry-section-icon">${icon('basket', 21)}</span>
+            <div><h2 id="pantry-shopping-title">Lista de la compra</h2><p>${shopping.length} ${shopping.length === 1 ? 'producto pendiente' : 'productos pendientes'}</p></div></div>
+          ${shopping.length ? `<button type="button" class="text-link" data-action="copy-shopping" aria-label="Copiar lista">${icon('list', 16)} Copiar</button>` : ''}
+        </header>
+        ${shoppingRows ? `<div class="pantry-estimate">${estimate}</div><ul class="pantry-rows">${shoppingRows}</ul>` : `<div class="pantry-empty">
+          ${icon('check', 24)}<p>No tienes compras pendientes.</p><button type="button" class="btn btn-secondary" data-action="new-grocery">Apuntar producto</button>
+        </div>`}
+      </section>
     </div>
-    <div class="section-heading"><h2>En casa</h2><span>${sorted.length} productos</span></div>
-    <div class="card list-card">${sorted.length===0?`<div class="empty"><p>Tu despensa está vacía.</p><button class="btn btn-primary" data-action="new-pantry">Añadir producto</button></div>`:
-      sorted.map(p=>`<div class="stock-row"><div class="stock-icon ${p.quantity>0?'':'empty-stock'}">${icon(p.quantity>0?'check':'warning',18)}</div><div class="stock-info"><b>${escapeHTML(p.name)}</b><small>${p.quantity>0?`${pretty(p.quantity)} ${p.unit}`:'Agotado'}${p.habitual?' · habitual':''}</small></div>
-       <div class="pantry-row-actions">
-         <button class="icon-btn pantry-adjust" data-action="pantry-minus" data-id="${escapeHTML(p.id)}" title="Consumir una unidad" aria-label="Consumir 1 de ${escapeHTML(p.name)}">${icon('minus',18)}</button>
-         <button class="icon-btn pantry-adjust" data-action="pantry-plus" data-id="${escapeHTML(p.id)}" title="Añadir una unidad" aria-label="Añadir 1 a ${escapeHTML(p.name)}">${icon('plus',18)}</button>
-         <button class="icon-btn" data-action="edit-pantry" data-id="${escapeHTML(p.id)}" title="Editar cantidad y ajustes" aria-label="Editar ${escapeHTML(p.name)}">${icon('edit',18)}</button>
-         <button class="icon-btn danger" data-action="delete-pantry" data-id="${escapeHTML(p.id)}" title="Eliminar producto" aria-label="Eliminar ${escapeHTML(p.name)}">${icon('trash',18)}</button>
-       </div></div>`).join('')}
-    </div>
-    <div class="section-heading"><h2>Táperes preparados</h2><span>${s.prepared.length} lotes</span></div>
-    <div class="card list-card">${s.prepared.length===0?`<div class="empty-sm">${icon('chef',28)}<p>Aquí aparecerán las raciones cuando cocines una receta.</p></div>`:
-       s.prepared.map(p=>{const r=s.recipes.find(r=>r.id===p.recipeId);return `<div class="stock-row"><div class="stock-icon">${icon('food',19)}</div><div class="stock-info"><b>${escapeHTML(r?.name??'Receta eliminada')}</b><small>${pretty(p.servings)} ración/es · ${p.location} · ${p.date}</small></div><button class="btn btn-compact" data-action="consume-prepared" data-id="${escapeHTML(p.id)}">Comer 1</button></div>`}).join('')}
-    </div>
-    
-  `;
+
+    <section class="pantry-panel pantry-prepared" aria-labelledby="pantry-prepared-title">
+      <header class="pantry-panel-head"><div class="pantry-panel-title">
+        <span class="pantry-section-icon">${icon('chef', 21)}</span>
+        <div><h2 id="pantry-prepared-title">Táperes preparados</h2><p>${s.prepared.length} ${s.prepared.length === 1 ? 'lote' : 'lotes'}</p></div>
+      </div></header>
+      ${preparedRows ? `<ul class="pantry-rows">${preparedRows}</ul>` : '<div class="pantry-empty"><p>Aquí aparecerán las raciones cuando cocines una receta.</p></div>'}
+    </section>
+  </div>`;
 }

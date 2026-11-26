@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { latestPantryPrices, estimateShoppingPrice } from '../dist/assets/lib/pantryPrices.js';
 import { parseVoicePlan, applyVoicePlan } from '../dist/assets/lib/unifiedAssistant.js';
 import { processAssistantMessage } from '../dist/assets/lib/assistant.js';
 import { expenses } from '../dist/assets/screens/expenses.js';
@@ -345,4 +346,30 @@ test('La voz no crea compras con precio cuando no se ha identificado supermercad
  assert.throws(()=>applyVoicePlan(s,plan),/supermercado/);
  assert.equal(s.pantry.length,0);
  assert.equal(s.purchases,undefined);
+});
+
+test('El último precio válido distingue el formato y las compras del mismo día', () => {
+ const purchases = [
+  {id:'first', product:'Limones', unit:'kg', quantity:1, totalPrice:4, store:'Lidl', date:'2026-11-23'},
+  {id:'older', product:'Limón', unit:'g', quantity:250, totalPrice:2, store:'Dia', date:'2026-11-22'},
+  {id:'same-day', product:'Limón', unit:'g', quantity:500, totalPrice:1.50, store:'Mercadona', date:'2026-11-23'},
+  {id:'unpriced', product:'Limón', unit:'g', quantity:250, store:'Dia', date:'2026-11-24'},
+  {id:'invalid', product:'Limón', unit:'g', quantity:250, totalPrice:Infinity, store:'Dia', date:'2026-11-24'},
+  {id:'individual', product:'Limón', unit:'ud', quantity:2, totalPrice:1.60, store:'Dia', date:'2026-11-24'},
+ ];
+ const prices = latestPantryPrices(purchases);
+ assert.deepEqual(prices.get('limon|g'), {amount:3, unitLabel:'kg', group:'g', store:'Mercadona', date:'2026-11-23'});
+ assert.equal(prices.get('limon|ud')?.amount, 0.8);
+ assert.equal(latestPantryPrices([]).size, 0);
+});
+
+test('La lista estima importes por cantidad compatible y redondea cada artículo a céntimos', () => {
+ const prices = latestPantryPrices([
+  {id:'milk', product:'Leche', unit:'l', quantity:1, totalPrice:2.01, store:'Lidl', date:'2026-11-23'},
+ ]);
+ const item = {name:'Leche', quantity:500, unit:'ml', reasons:[], manualIds:[]};
+ const known = prices.get('leche|ml');
+ assert.equal(estimateShoppingPrice(item, known), 1.01);
+ assert.equal(estimateShoppingPrice({...item, unit:'ud'}, known), undefined);
+ assert.equal(estimateShoppingPrice(item, undefined), undefined);
 });

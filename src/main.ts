@@ -57,6 +57,7 @@ function moreMenu():string {
 }
 function render(resetScroll=false):void {
   const scroll=window.scrollY;
+  const voiceOpen = root.querySelector<HTMLDetailsElement>('.pantry-voice')?.open ?? false;
   const xp=levelInfo(totalXP(state));
   root.innerHTML=`<div class="app-layout">
     <aside class="sidebar"><div class="brand"> <span class="brand-mark">${icon('heart',24)}</span><div><b>MI SALUD</b><small>TU AVENTURA DIARIA</small></div></div>
@@ -64,7 +65,7 @@ function render(resetScroll=false):void {
     <nav aria-label="Secciones">${DESKTOP_TABS.map(t=>`<button class="nav-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,20)} <span>${t.label}</span></button>`).join('')}</nav>
     <div class="sidebar-footer"><span class="sidebar-level">${icon('trophy',17)} Nivel ${xp.level}</span><div class="track track-green"><div style="width:${xp.percent}%"></div></div><small>${xp.earned} / ${xp.needed} XP</small></div></aside>
     <div class="content-shell"><header class="topbar"><div class="top-brand">${icon('heart',19)} <strong>Mi Salud</strong></div><span class="top-date">${new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date())}</span><span class="top-badge">${icon('trophy',16)} Nivel ${xp.level}</span></header>
-    <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state):current==='expenses'?expenses(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):current==='more'?moreMenu():health(state)}</main>
+    <main id="main-content" class="content" tabindex="-1">${current==='home'?dashboard(state):current==='planner'?planner(state,currentWeek(weekOffset)):current==='pantry'?pantry(state,voiceOpen):current==='expenses'?expenses(state):current==='recipes'?recipes(state):current==='training'?training(state,routine):current==='more'?moreMenu():health(state)}</main>
     <footer class="page-footer">Mi Salud · v0.9 · Privado en tu dispositivo · Sin conexión a servicios externos</footer></div>
     <nav class="bottom-nav" aria-label="Navegación móvil">${MOBILE_TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
@@ -105,20 +106,20 @@ function openPantry(id?:string):void{
     <details class="pantry-advanced"><summary>Reposición automática (opcional)</summary><div class="form-pair">${field('Avisar por debajo de',numberField('minStock',p?.minStock??1,'0'))}${field('Cantidad objetivo',numberField('restockQuantity',p?.restockQuantity??Math.max(p?.quantity??1,1),'0.01'))}</div></details>
     <p class="pantry-form-error" role="alert" aria-live="polite" hidden></p><button class="btn btn-primary btn-wide" type="button" data-action="save-pantry">${icon('save',18)} Guardar producto</button></form>`);
 }
-function openPurchase(id?:string):void{
+function openPurchase(id?:string, pantryItem?: { product: string; quantity?: number; unit?: Unit }):void{
   const entry=(state.purchases??[]).find(x=>x.id===id);
   const stores=[...new Set((state.purchases??[]).map(x=>x.store))];
   showModal(modalHeading(entry?'Editar compra':'Registrar compra','Apunta qué compraste, dónde y qué te pareció. No hace falta tener un ticket.') +
     '<form id="form-purchase" class="form-grid" novalidate autocomplete="off">' +
     '<input name="entryId" type="hidden" value="'+esc(entry?.id??'')+'">' +
-    field('Producto · usa siempre el mismo nombre para compararlo','<input name="product" required maxlength="80" placeholder="Ej. Pechuga de pollo" value="'+esc(entry?.product??'')+'">') +
+    field('Producto · usa siempre el mismo nombre para compararlo','<input name="product" required maxlength="80" placeholder="Ej. Pechuga de pollo" value="'+esc(entry?.product??pantryItem?.product??'')+'">') +
     field('Supermercado','<input name="store" required maxlength="80" list="known-stores" placeholder="Ej. Mercadona" value="'+esc(entry?.store??'')+'"><datalist id="known-stores">'+stores.map(x=>'<option value="'+esc(x)+'"></option>').join('')+'</datalist>') +
     field('Fecha','<input type="date" name="date" required value="'+esc(entry?.date??localDate())+'">') +
-    '<div class="form-pair">'+field('Cantidad',numberField('quantity',entry?.quantity??1,'0.01'))+field('Unidad','<select name="unit">'+optUnits(entry?.unit??'kg')+'</select>')+'</div>' +
+    '<div class="form-pair">'+field('Cantidad',numberField('quantity',entry?.quantity??pantryItem?.quantity??1,'0.01'))+field('Unidad','<select name="unit">'+optUnits(entry?.unit??pantryItem?.unit??'kg')+'</select>')+'</div>' +
     field('Precio total pagado (€) · opcional','<input name="totalPrice" type="number" min="0.01" step="any" inputmode="decimal" placeholder="Ej. 4,70" value="'+esc(entry?.totalPrice??'')+'">') +
     field('Calidad para ti (opcional)','<select name="quality"><option value="">Sin valorar</option>'+[1,2,3,4,5].map(i=>'<option value="'+i+'" '+(entry?.quality===i?'selected':'')+'>'+i+'/5'+(i===5?' · Excelente':i===1?' · Mala':'')+'</option>').join('')+'</select>') +
     field('Tu experiencia (opcional)','<textarea name="note" maxlength="350" rows="3" placeholder="Ej. Más jugoso; repetiría">'+esc(entry?.note??'')+'</textarea>') +
-    (entry?'':'<label class="habitual-toggle"><input type="checkbox" name="addStock"><span><b>También sumarlo a mi despensa</b><small>Desmárcalo si estás registrando una compra antigua o de prueba.</small></span></label>') +
+    (entry?'':'<label class="habitual-toggle"><input type="checkbox" name="addStock"'+(pantryItem?' checked':'')+'><span><b>También sumarlo a mi despensa</b><small>Desmárcalo si estás registrando una compra antigua o de prueba.</small></span></label>') +
     '<p class="purchase-error" role="alert" aria-live="polite" hidden></p>' +
     '<button type="button" data-action="save-purchase" class="btn btn-primary btn-wide">Guardar compra y valoración</button></form>');
 }
@@ -415,7 +416,15 @@ async function act(action:string,el:HTMLElement):Promise<void>{
     case 'go':current=(TABS.find(t=>t.id===el.dataset.tab)?.id??'home');closeModal();render(true);break;
     case 'toggle-mission':{if(!missions.some(x=>x.id===id))return;toggleMission(state,localDate(),id);await commit('Progreso actualizado');break;}
     case 'new-pantry':openPantry();break;
-    case 'new-purchase':openPurchase();break;
+    case 'new-purchase':{
+      if(el.dataset.stock !== 'true'){openPurchase();break;}
+      openPurchase(undefined, {
+        product: el.dataset.name ?? '',
+        quantity: el.dataset.qty === undefined ? undefined : Number(el.dataset.qty),
+        unit: el.dataset.unit as Unit | undefined,
+      });
+      break;
+    }
     case 'edit-purchase':openPurchase(id);break;
     case 'save-purchase':{
       try{await savePurchase();}
