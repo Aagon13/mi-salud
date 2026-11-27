@@ -70,6 +70,7 @@ details summary{cursor:pointer;font-size:12px;color:#b9d0dd}
 .expense-total span{font-size:12px;color:#b5d6ca}
 .expense-quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .expense-quick-actions .btn{justify-content:center;min-height:55px}
+.expense-quick-actions .expense-compare{grid-column:1 / -1}
 .expense-help{font-size:12px;color:var(--muted);margin-bottom:21px}
 @media(max-width:400px){.expense-quick-actions{grid-template-columns:1fr}.bottom-item{font-size:10px}}
 
@@ -121,13 +122,22 @@ details summary{cursor:pointer;font-size:12px;color:#b9d0dd}
 /* Registro único v0.9 */
 .assistant-compose textarea{flex:1 1 195px;min-width:0;min-height:72px;padding:12px;border-radius:11px;background:#0d1b29;border:1px solid #42645d;color:var(--text);font-size:16px;resize:vertical}
 .voice-review-list{border:1px solid var(--line);border-radius:12px;padding:8px 12px}
-.voice-review-row{display:grid;grid-template-columns:68px 1fr auto auto;align-items:center;gap:8px;padding:11px 0;border-bottom:1px solid var(--line);font-size:13px}
-.voice-review-row:last-child{border-bottom:0}
-.voice-review-row b{font-size:11px;color:#80d8b2}
-.voice-review-row small{color:var(--muted)}
-.voice-review-row strong{font-size:12px}
-@media(max-width:460px){.assistant-compose textarea{flex-basis:100%}.voice-review-row{grid-template-columns:60px 1fr auto}.voice-review-row strong{grid-column:2 / -1}}
-
+.voice-review-list { display: grid; gap: 8px; }
+.voice-review-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.voice-review-purchase { grid-template-columns: minmax(0, 1fr) minmax(85px, 32%); }
+.voice-review-row legend { padding: 0 5px; color: #9ee7c5; font-size: 12px; }
+.voice-review-row input { min-width: 0; }
+.voice-review-transcript .field { margin-top: 11px; }
+@media(max-width:460px){.assistant-compose textarea{flex-basis:100%}}
 /* Despensa */
 .pantry-page {
   --pantry-border: #304159;
@@ -278,7 +288,7 @@ details summary{cursor:pointer;font-size:12px;color:#b9d0dd}
 .pantry-page .pantry-prepared .pantry-item-actions { grid-column: auto; }
 
 @container (min-width: 410px) {
-  .pantry-page .pantry-item:is(.pantry-inventory-item, .pantry-shopping-item) { grid-template-columns: minmax(0, 1fr) minmax(0, min(32%, 135px)) auto; }
+  .pantry-page .pantry-shopping-item { grid-template-columns: minmax(0, 1fr) minmax(0, min(32%, 135px)) auto; }
   .pantry-page .pantry-item-actions { grid-column: auto; }
 }
 @media (max-width: 680px) {
@@ -290,3 +300,119 @@ details summary{cursor:pointer;font-size:12px;color:#b9d0dd}
   .pantry-page .pantry-entry, .pantry-page .pantry-panel { padding: 11px; }
   .pantry-page .pantry-entry-action { gap: 6px; padding-inline: 6px; }
 }
+
+.pantry-page .pantry-inventory-item .pantry-item-actions {
+  grid-column: 1 / -1;
+  justify-content: space-between;
+}
+.pantry-page .pantry-stock-actions,
+.pantry-page .pantry-adjust-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.pantry-page .pantry-adjust-actions { margin-left: auto; }
+.pantry-page .pantry-stock-actions .pantry-status-button {
+  background: #202d40;
+  color: #dce9f7;
+}
+.pantry-page .pantry-status-button[disabled] {
+  color: var(--pantry-gold);
+  border-color: #95784f;
+  cursor: default;
+}
+
+.shop-comparison {
+  display: grid;
+  gap: 14px;
+}
+.shop-comparison .shop-comparison-picker { display: grid; gap: 6px; }
+.shop-comparison .shop-comparison-picker > label { color: var(--muted); font-size: 13px; }
+.shop-comparison .shop-comparison-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.shop-comparison .shop-comparison-controls select {
+  flex: 1 1 170px;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--panel);
+}
+.shop-comparison :is(select, button) { min-height: 44px; }
+.shop-comparison .shop-comparison-note { margin: 0 0 10px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.shop-comparison .shop-comparison-highlights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 135px), 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.shop-comparison .shop-comparison-highlights > div {
+  padding: 10px 12px;
+  border: 1px solid #33584d;
+  border-radius: 10px;
+  background: #172f2e;
+}
+.shop-comparison .shop-comparison-highlights dt { color: #a9d9c9; font-size: 12px; }
+.shop-comparison .shop-comparison-highlights dd { margin: 4px 0 0; color: #bbf8df; font-weight: 750; overflow-wrap: anywhere; }
+.shop-comparison .shop-comparison-stores {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.shop-comparison .shop-comparison-store {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.shop-comparison .shop-comparison-store-heading,
+.shop-comparison .shop-comparison-store-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.shop-comparison .shop-comparison-store-heading h3 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.shop-comparison .shop-comparison-rating { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
+.shop-comparison .shop-comparison-rating strong { color: var(--amber); }
+.shop-comparison .shop-comparison-prices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 10px 0;
+}
+.shop-comparison .shop-comparison-prices dt,
+.shop-comparison .shop-comparison-store-footer > span { color: var(--muted); font-size: 12px; }
+.shop-comparison .shop-comparison-prices dd { margin: 3px 0 0; color: var(--text); font-weight: 650; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.shop-comparison .shop-comparison-prices .shop-comparison-meta { color: var(--muted); font-size: 12px; font-weight: 400; }
+.shop-comparison .shop-comparison-comment { margin: 10px 0; color: #c6d6ee; font-size: 13px; overflow-wrap: anywhere; }
+.shop-comparison .shop-comparison-store-footer button { margin-left: auto; }
+
+.recipe-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+}
+.recipe-stock-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.recipe-stock-notice svg { flex-shrink: 0; }
+.recipe-stock-notice strong,
+.recipe-stock-notice span { display: block; }
+.recipe-stock-missing { color: #ffddad; background: #413321; border-color: #6f5435; }
+.recipe-stock-check { color: #cbdff7; background: #26374c; }
+.recipe-stock-ready { color: #b6f4db; background: #1e3e36; }

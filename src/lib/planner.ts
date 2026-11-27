@@ -1,5 +1,5 @@
 import type { AppData, Ingredient, PantryItem, PlannedMeal, Recipe, Unit } from '../types.js';
-import { joinKey, normalizeName, toBase, unitGroup } from './helpers.js';
+import { joinKey, normalizeName, productKey, toBase, unitGroup } from './helpers.js';
 import { addDays } from './dates.js';
 
 interface Remaining { quantity:number; unit:Unit; name:string }
@@ -55,11 +55,61 @@ export function enoughForRecipe(recipe:Recipe,pantry:PantryItem[],servings:numbe
   }
   return {ok:missing.length===0,missing};
 }
+/** Comprueba la despensa para todas las raciones de una receta habitual. */
+export function recipePantryStatus(recipe: Recipe, pantry: PantryItem[]): { missing: Ingredient[]; check: string[] } {
+  const required = new Map<string, Ingredient>();
+  for (const ingredient of recipe.ingredients) {
+    const key = joinKey(ingredient.name, ingredient.unit);
+    const prior = required.get(key);
+    const quantity = toBase(ingredient.quantity, ingredient.unit) + (prior?.quantity ?? 0);
+    required.set(key, { name: prior?.name ?? ingredient.name, quantity, unit: unitGroup(ingredient.unit) });
+  }
+
+  const present = new Map<string, PantryItem[]>();
+  for (const item of pantry) {
+    if (!(Number.isFinite(item.quantity) && item.quantity > 0) && !item.stockStatus) continue;
+    const key = productKey(item.name);
+    const items = present.get(key);
+    if (items) items.push(item);
+    else present.set(key, [item]);
+  }
+
+  const missing: Ingredient[] = [];
+  const check = new Map<string, string>();
+  for (const ingredient of required.values()) {
+    const key = productKey(ingredient.name);
+    const items = present.get(key) ?? [];
+    let quantity = 0;
+    let uncertain = false;
+    let low = false;
+
+    for (const item of items) {
+      if (unitGroup(item.unit) !== ingredient.unit) {
+        uncertain = true;
+        continue;
+      }
+      if (Number.isFinite(item.quantity) && item.quantity > 0) quantity += toBase(item.quantity, item.unit);
+      uncertain ||= Boolean(item.stockStatus);
+      low ||= item.stockStatus === 'low';
+    }
+
+    const shortage = ingredient.quantity - quantity;
+    if (shortage > 0.00001 && !uncertain) {
+      missing.push({ ...ingredient, quantity: shortage });
+    } else if (shortage > 0.00001 || low) {
+      check.set(key, ingredient.name);
+    }
+  }
+
+  return { missing, check: [...check.values()] };
+}
+
 export function addToPantry(s:AppData,name:string,qty:number,unit:Unit):void {
   const existing=s.pantry.find(x=>joinKey(x.name,x.unit)===joinKey(name,unit));
   if(existing){
     const newBase=toBase(existing.quantity,existing.unit)+toBase(qty,unit);
     existing.quantity=newBase/(existing.unit==='kg'||existing.unit==='l'?1000:1);
+    delete existing.stockStatus;
     existing.updatedAt=new Date().toISOString();
   } else s.pantry.push({id:crypto.randomUUID(),name:name.trim(),quantity:qty,unit,updatedAt:new Date().toISOString()});
 }
@@ -70,6 +120,7 @@ export function cookRecipe(s:AppData,recipe:Recipe,servings:number,location:'nev
     for(const item of s.pantry.filter(p=>joinKey(p.name,p.unit)===joinKey(ing.name,ing.unit))){
       const quantity=toBase(item.quantity,item.unit),take=Math.min(quantity,pending);
       item.quantity=(quantity-take)/(item.unit==='kg'||item.unit==='l'?1000:1);
+      if (take > 0 && item.quantity === 0) delete item.stockStatus;
       pending-=take;
       if(pending<=0)break;
     }

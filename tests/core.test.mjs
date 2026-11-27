@@ -164,12 +164,14 @@ test('El asistente solo modifica despensa y no gestiona preguntas de dónde comp
  assert.throws(()=>processAssistantMessage(s,'¿Dónde compro mejor el pollo?'),/Prueba/);
  assert.deepEqual(s,before);
 });
-test('Gastos no muestra asistente ni comparaciones; el asistente sigue en Despensa',()=>{
+test('Gastos abre el comparador y Despensa conserva el dictado',()=>{
  const s=initialData();
  const gastos=expenses(s);
  assert.doesNotMatch(gastos,/id="form-assistant"|¿Dónde compro|compáralos|conviene comprarlos/);
  assert.match(gastos,/Tickets guardados/);
  assert.match(gastos,/Historial de compras/);
+ assert.match(gastos,/data-action="open-store-comparison"/);
+ assert.doesNotMatch(pantry(s),/data-action="open-store-comparison"/);
  assert.match(pantry(s),/id="form-assistant"/);
  assert.doesNotMatch(pantry(s),/¿Dónde compro/);
 });

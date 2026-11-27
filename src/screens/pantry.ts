@@ -1,7 +1,7 @@
 import { icon } from '../ui/icons.js';
 import { assistantCard } from '../ui/assistantCard.js';
-import { escapeHTML, joinKey, pretty } from '../lib/helpers.js';
-import { estimateShoppingPrice, latestPantryPrices } from '../lib/pantryPrices.js';
+import { escapeHTML, joinKey, pretty, productKey } from '../lib/helpers.js';
+import { estimateShoppingPrice, latestPantryPrices, latestUnmeasuredPrices } from '../lib/pantryPrices.js';
 import { shoppingList } from '../lib/shopping.js';
 import { computeCoverage } from '../lib/planner.js';
 import { currentWeek } from '../lib/dates.js';
@@ -12,8 +12,9 @@ const euro = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR'
 export function pantry(s: AppData, voiceOpen = false): string {
   const inventory = [...s.pantry].sort((a, b) =>
     Number(Boolean(b.habitual)) - Number(Boolean(a.habitual)) || a.name.localeCompare(b.name, 'es'));
-  const inStock = inventory.filter(item => item.quantity > 0).length;
+  const inStock = inventory.filter(item => item.quantity > 0 || item.stockStatus).length;
   const prices = latestPantryPrices(s.purchases ?? []);
+  const lastPaid = latestUnmeasuredPrices(s.purchases ?? []);
   const shopping = shoppingList(s, computeCoverage(s, currentWeek()).missing).map(item => ({
     ...item, estimate: estimateShoppingPrice(item, prices.get(joinKey(item.name, item.unit))),
   }));
@@ -24,17 +25,31 @@ export function pantry(s: AppData, voiceOpen = false): string {
     const name = escapeHTML(item.name);
     const id = escapeHTML(item.id);
     const price = prices.get(joinKey(item.name, item.unit));
-    const low = item.habitual && item.quantity + 1e-9 < Math.max(0.01, item.minStock ?? 1);
-    const stock = item.quantity <= 0 ? '<span class="pantry-stock-low">Agotado</span>'
-      : `${pretty(item.quantity)} ${item.unit}${low ? ' · <span class="pantry-stock-low">Queda poco</span>' : ''}`;
+    const paid = lastPaid.get(productKey(item.name));
+    const showTotal = paid && (!price || paid.date >= price.date);
+    const depleted = item.quantity <= 0 && !item.stockStatus;
+    const low = item.stockStatus === 'low' || (!item.stockStatus && item.habitual && item.quantity + 1e-9 < Math.max(0.01, item.minStock ?? 1));
+    const statusLabel = depleted ? 'Agotado' : low ? 'Queda poco' : '';
+    const status = statusLabel ? `<span class="pantry-stock-low">${statusLabel}</span>` : '';
+    const quantity = item.quantity > 0 ? `${pretty(item.quantity)} ${item.unit}` : '';
+    const stock = [quantity, status].filter(Boolean).join(' · ') || 'Disponible';
     return `<li class="pantry-item pantry-inventory-item">
       <div class="pantry-item-info"><strong>${name}</strong><small>${stock}${item.habitual ? ' · Habitual' : ''}</small></div>
-      <div class="pantry-item-price">${price ? `<strong>${euro.format(price.amount)} / ${price.unitLabel}</strong><small>Último precio · ${escapeHTML(price.store)}</small>` : '<small class="pantry-price-missing">Sin precio</small>'}</div>
+      <div class="pantry-item-price">${showTotal
+        ? `<strong>${euro.format(paid.amount)}</strong><small>Total pagado · ${escapeHTML(paid.store)}</small>`
+        : price ? `<strong>${euro.format(price.amount)} / ${price.unitLabel}</strong><small>Último precio · ${escapeHTML(price.store)}</small>`
+        : '<small class="pantry-price-missing">Sin precio</small>'}</div>
       <div class="pantry-item-actions">
-        <button type="button" class="icon-btn pantry-adjust" data-action="pantry-minus" data-id="${id}" aria-label="Descontar cantidad de ${name}" title="Descontar cantidad">${icon('minus', 17)}</button>
-        <button type="button" class="icon-btn pantry-adjust" data-action="pantry-plus" data-id="${id}" aria-label="Aumentar cantidad de ${name}" title="Aumentar cantidad">${icon('plus', 17)}</button>
+        ${depleted ? '' : `<div class="pantry-stock-actions">
+          <button type="button" class="btn btn-compact pantry-status-button" data-action="pantry-low" data-id="${id}" aria-label="Queda poco de ${name}"${item.stockStatus === 'low' ? ' disabled' : ''}>Queda poco</button>
+          <button type="button" class="btn btn-compact pantry-status-button" data-action="deplete-pantry" data-id="${id}" aria-label="Marcar ${name} como agotado">Agotado</button>
+        </div>`}
+        <div class="pantry-adjust-actions">
+        ${!item.stockStatus || item.quantity > 0 ? `<button type="button" class="icon-btn pantry-adjust" data-action="pantry-minus" data-id="${id}" aria-label="Descontar cantidad de ${name}" title="Descontar cantidad">${icon('minus', 17)}</button>
+        <button type="button" class="icon-btn pantry-adjust" data-action="pantry-plus" data-id="${id}" aria-label="Aumentar cantidad de ${name}" title="Aumentar cantidad">${icon('plus', 17)}</button>` : ''}
         <button type="button" class="icon-btn" data-action="edit-pantry" data-id="${id}" aria-label="Editar ${name}" title="Editar producto">${icon('edit', 17)}</button>
         <button type="button" class="icon-btn danger" data-action="delete-pantry" data-id="${id}" aria-label="Eliminar ${name}" title="Eliminar producto">${icon('trash', 17)}</button>
+        </div>
       </div>
     </li>`;
   }).join('');
@@ -42,9 +57,13 @@ export function pantry(s: AppData, voiceOpen = false): string {
   const shoppingRows = shopping.map(item => {
     const name = escapeHTML(item.name);
     const itemData = `data-name="${name}" data-qty="${item.quantity}" data-unit="${item.unit}"`;
+    const paid = lastPaid.get(productKey(item.name));
     return `<li class="pantry-item pantry-shopping-item">
       <div class="pantry-item-info"><strong>${name}</strong><small>${pretty(item.quantity)} ${item.unit} · ${escapeHTML(item.reasons.join(' + '))}</small></div>
-      <div class="pantry-item-price">${item.estimate === undefined ? '<small class="pantry-price-missing">Sin precio</small>' : `<strong>${euro.format(item.estimate)}</strong><small>Estimado</small>`}</div>
+      <div class="pantry-item-price">${item.estimate !== undefined
+        ? `<strong>${euro.format(item.estimate)}</strong><small>Estimado</small>`
+        : paid ? `<strong>${euro.format(paid.amount)}</strong><small>Última compra</small>`
+        : '<small class="pantry-price-missing">Sin precio</small>'}</div>
       <div class="pantry-item-actions">
         <button type="button" class="btn btn-compact" data-action="buy-shopping" ${itemData} aria-label="Marcar ${name} como comprado">${icon('check', 16)} Comprado</button>
         <button type="button" class="icon-btn" data-action="new-purchase" data-stock="true" ${itemData} aria-label="Registrar el precio de ${name}" title="Registrar compra con precio">${icon('wallet', 17)}</button>
@@ -55,7 +74,7 @@ export function pantry(s: AppData, voiceOpen = false): string {
   const completeEstimate = priced.length === shopping.length;
   const estimate = priced.length ? `<div><b>${completeEstimate ? 'Total estimado' : 'Total estimado parcial'}</b>
     <small>${completeEstimate ? 'Según tus últimas compras' : `${priced.length} de ${shopping.length} con precio`}</small></div><strong>${euro.format(subtotal)}</strong>`
-    : '<b>Sin precios registrados</b>';
+    : '<b>Total sin estimar</b>';
 
   const preparedRows = s.prepared.map(item => {
     const recipe = s.recipes.find(recipe => recipe.id === item.recipeId);
@@ -83,7 +102,7 @@ export function pantry(s: AppData, voiceOpen = false): string {
         <button type="button" class="pantry-entry-action" data-action="open-receipt"><span class="pantry-entry-icon">${icon('camera', 19)}</span><b>Foto de ticket</b></button>
       </div>
       <details class="pantry-voice"${voiceOpen ? ' open' : ''}>
-        <summary>${icon('mic', 18)}<b>Añadir por voz</b>${icon('right', 16)}</summary>
+        <summary>${icon('mic', 18)}<b>Dictar o consultar</b>${icon('right', 16)}</summary>
         ${assistantCard()}
       </details>
     </section>

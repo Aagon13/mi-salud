@@ -22,6 +22,7 @@ export function expenses(s:AppData):string{
     <div class="expense-quick-actions">
       <button class="btn btn-primary" type="button" data-action="open-receipt">${icon('camera',20)} Foto de ticket</button>
       <button class="btn btn-secondary" type="button" data-action="new-purchase">${icon('plus',19)} Registrar compra</button>
+      <button class="btn btn-secondary expense-compare" type="button" data-action="open-store-comparison">${icon('bar',19)} Comparar supermercados</button>
     </div>
   </div>
   <p class="expense-help">Puedes fotografiar el ticket desde aquí o registrar una compra sin ticket. Revisa los productos antes de guardarlos.</p>
@@ -37,7 +38,7 @@ export function expenses(s:AppData):string{
       <div class="purchase-summary"><b>${money(monthly.total)}</b><span>Registrado en ${today} · ${monthly.entries} artículos con precio</span></div>
       <p>Consulta y edita los productos que has comprado.</p>
       ${purchases.length===0?`<div class="empty-sm"><p>Sin compras registradas todavía. Añade una compra o fotografía un ticket.</p></div>`:
-      purchases.slice(0,25).map(entry=>`<div class="purchase-history-row"><div class="stock-info"><b>${escapeHTML(entry.product)}</b><small>${escapeHTML(entry.store)} · ${entry.date} · ${pretty(entry.quantity)} ${entry.unit} · ${entry.totalPrice===undefined?"Sin precio":money(entry.totalPrice)}${entry.quality===undefined?"":" · ⭐ "+entry.quality+"/5"}</small>${entry.note?`<small>${escapeHTML(entry.note)}</small>`:""}</div><button class="icon-btn" data-action="edit-purchase" data-id="${escapeHTML(entry.id)}" aria-label="Editar compra">${icon("edit",17)}</button><button class="icon-btn danger" data-action="delete-purchase" data-id="${escapeHTML(entry.id)}" aria-label="Eliminar compra">${icon("trash",17)}</button></div>`).join("")}
+      purchases.slice(0,25).map(entry=>`<div class="purchase-history-row"><div class="stock-info"><b>${escapeHTML(entry.product)}</b><small>${escapeHTML(entry.store)} · ${entry.date}${entry.quantity===undefined?"":` · ${pretty(entry.quantity)} ${entry.unit}`} · ${entry.totalPrice===undefined?"Sin precio":money(entry.totalPrice)}${entry.quality===undefined?"":" · ⭐ "+entry.quality+"/5"}</small>${entry.note?`<small>${escapeHTML(entry.note)}</small>`:""}</div><button class="icon-btn" data-action="edit-purchase" data-id="${escapeHTML(entry.id)}" aria-label="Editar compra">${icon("edit",17)}</button><button class="icon-btn danger" data-action="delete-purchase" data-id="${escapeHTML(entry.id)}" aria-label="Eliminar compra">${icon("trash",17)}</button></div>`).join("")}
       ${purchases.length>25?`<p class="note">Mostrando las 25 compras más recientes de ${purchases.length}.</p>`:""}
     </section>
 

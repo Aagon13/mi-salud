@@ -24,7 +24,7 @@ export function shoppingList(s: AppData, missingFromMenu: MissingIngredient[] = 
     } else items.set(key, { name, quantity, unit, reasons: [reason], manualIds: manualId ? [manualId] : [], baseQuantity: desired });
   }
   for (const p of s.pantry) {
-    if (!p.habitual) continue;
+    if (!p.habitual || p.stockStatus === 'available' || (p.stockStatus === 'low' && p.quantity === 0)) continue;
     const min = Math.max(0.01, p.minStock ?? 1);
     if (p.quantity + 1e-9 >= min) continue;
     const target = Math.max(min, p.restockQuantity ?? 1);
@@ -40,10 +40,13 @@ export function shoppingList(s: AppData, missingFromMenu: MissingIngredient[] = 
 }
 
 /** Apunta el agotamiento; si es habitual se repondrá automáticamente. */
-export function markOut(s: AppData, name: string): string {
+export function markOut(s: AppData, name: string, pantryId?: string): string {
   const key = productKey(cleanName(name));
   if (!key) throw Error('Indica qué producto se ha terminado.');
-  let p = s.pantry.find(x => productKey(x.name) === key);
+  let p = pantryId === undefined
+    ? s.pantry.find(x => productKey(x.name) === key)
+    : s.pantry.find(x => x.id === pantryId);
+  if (pantryId !== undefined && !p) throw Error('El producto ya no está en casa.');
   if (!p) {
     const cleaned = cleanName(name);
     addToPantry(s, cleaned, 0, 'ud');
@@ -52,11 +55,39 @@ export function markOut(s: AppData, name: string): string {
   }
   const old = p.quantity;
   p.quantity = 0;
+  delete p.stockStatus;
   p.updatedAt = new Date().toISOString();
   if (!p.habitual && !s.groceries.some(g => joinKey(g.name,g.unit) === joinKey(p.name,p.unit))) {
     s.groceries.push({id:crypto.randomUUID(),name:p.name,quantity:Math.max(old,1),unit:p.unit});
   }
   return p.name;
+}
+
+/** Registra que hay producto en casa aunque se desconozca la cantidad comprada. */
+export function markPresent(s: AppData, name: string): string {
+  const cleaned = cleanName(name);
+  const key = productKey(cleaned);
+  if (!key || cleaned.length > 80) throw Error('Nombre de producto no válido.');
+  const matches = s.pantry.filter(item => productKey(item.name) === key);
+  let item = matches.find(item => normalizeName(item.name) === normalizeName(cleaned)) ?? matches[0];
+  const now = new Date().toISOString();
+  if (!item) {
+    item = { id: crypto.randomUUID(), name: cleaned, quantity: 0, unit: 'ud', updatedAt: now };
+    s.pantry.push(item);
+  }
+  item.stockStatus = 'available';
+  item.updatedAt = now;
+  s.groceries = s.groceries.filter(grocery => productKey(grocery.name) !== key);
+  return item.name;
+}
+
+export function markStockLow(s: AppData, id: string): string {
+  const item = s.pantry.find(item => item.id === id);
+  if (!item) throw Error('El producto ya no está en casa.');
+  if (item.quantity <= 0 && !item.stockStatus) throw Error('Este producto ya está agotado.');
+  item.stockStatus = 'low';
+  item.updatedAt = new Date().toISOString();
+  return item.name;
 }
 
 export function purchase(s:AppData, name:string, quantity:number, unit:Unit): void {
@@ -174,6 +205,7 @@ export function consumePantry(s:AppData,name:string,quantity:number,unit:Unit|nu
   const used=toBase(quantity,unit??existing.unit);
   if(used>available+1e-8)throw Error('Solo tienes '+(available/toBase(1,existing.unit))+' '+existing.unit+' de '+existing.name+'.');
   existing.quantity=Math.max(0,(available-used)/toBase(1,existing.unit));
+  if (existing.quantity === 0) delete existing.stockStatus;
   existing.updatedAt=new Date().toISOString();
   const ids=new Set(same.filter(p=>p.id!==existing.id).map(p=>p.id));
   s.pantry=s.pantry.filter(p=>!ids.has(p.id));
@@ -216,6 +248,7 @@ export function applyQuickAction(s:AppData,cmd:QuickCommand):string {
       if(joinKey(existing.name,existing.unit)!==joinKey(cmd.name,unit))
         throw Error('La unidad no coincide con la que tienes. Cámbiala desde Editar.');
       existing.quantity=toBase(cmd.quantity,unit)/toBase(1,existing.unit);
+      delete existing.stockStatus;
       existing.updatedAt=new Date().toISOString();
       const ids=new Set(matches.filter(p=>p.id!==existing.id&&joinKey(p.name,p.unit)===joinKey(existing.name,existing.unit)).map(p=>p.id));
       s.pantry=s.pantry.filter(p=>!ids.has(p.id));

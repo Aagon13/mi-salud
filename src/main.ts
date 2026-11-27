@@ -2,6 +2,7 @@ import { initialData, missions } from './data/seed.js';
 import { dashboard } from './screens/dashboard.js';
 import { pantry } from './screens/pantry.js';
 import { expenses } from './screens/expenses.js';
+import { shopComparison } from './ui/shopComparison.js';
 import { planner } from './screens/planner.js';
 import { recipes, recipeDetail } from './screens/recipes.js';
 import { training } from './screens/training.js';
@@ -11,10 +12,10 @@ import { loadData, saveData, isValidBackup, downloadFullBackup, restoreBackupPho
 import { compressReceiptPhoto } from './lib/receiptPhoto.js';
 import { toggleMission, levelInfo, totalXP } from './lib/progress.js';
 import { addToPantry, cookRecipe, enoughForRecipe, computeCoverage } from './lib/planner.js';
-import { applyQuickCommand, markOut, purchase, shoppingList, consumePantry, removeFromPantry } from './lib/shopping.js';
+import { applyQuickCommand, markOut, purchase, shoppingList, consumePantry, removeFromPantry, markStockLow } from './lib/shopping.js';
 import { parseReceiptText, parseReviewedReceipt } from './lib/receipt.js';
-import { registerPurchase } from './lib/buyingAdvice.js';
-import { parseVoicePlan, applyVoicePlan } from './lib/unifiedAssistant.js';
+import { askBuyingAdvice, isBuyingAdviceQuestion, registerPurchase } from './lib/buyingAdvice.js';
+import { parseVoicePlan, applyVoicePlan, type VoicePlan } from './lib/unifiedAssistant.js';
 import { escapeHTML as esc, optUnits, positive, uid, shrinkPhoto, normalizeName, joinKey } from './lib/helpers.js';
 import { icon } from './ui/icons.js';
 import type { AppData, Ingredient, Recipe, Unit, PurchaseRecord, ReceiptRecord } from './types.js';
@@ -70,7 +71,7 @@ function render(resetScroll=false):void {
     <nav class="bottom-nav" aria-label="Navegación móvil">${MOBILE_TABS.map(t=>`<button class="bottom-item ${current===t.id?'active':''}" data-action="go" data-tab="${t.id}" aria-label="${t.label}" aria-current="${current===t.id?'page':'false'}">${icon(t.icon,21)}<span>${t.label}</span></button>`).join('')}</nav>
   </div>`;
   if(resetScroll) window.scrollTo({top:0,behavior:'instant'}); else window.scrollTo({top:scroll,behavior:'instant'});
-  if(lastAssistantReply){const panel=root.querySelector<HTMLElement>('#assistant-answer');if(panel){panel.textContent=lastAssistantReply;panel.hidden=false;}}
+  if(lastAssistantReply) showAssistantReply(lastAssistantReply);
 }
 async function commit(message='Guardado'):Promise<void>{
   saving=true;
@@ -98,26 +99,56 @@ function numberField(name:string,val:string|number='1',min='0.01'):string{return
 function openPantry(id?:string):void{
   const p=state.pantry.find(x=>x.id===id);
   const habitual=p?.habitual??true;
+  const quantityInput = p?.stockStatus && p.quantity === 0
+    ? '<input name="quantity" type="number" step="any" min="0" placeholder="Sin indicar">'
+    : numberField('quantity', p?.quantity ?? 1, '0');
   showModal(`${modalHeading(p?'Editar producto':'Añadir producto')}
     <form id="form-pantry" class="form-grid" autocomplete="off" novalidate><input type="hidden" name="id" value="${esc(p?.id??'')}">
     ${field('Producto',`<input name="productName" autocomplete="off" placeholder="Ej. Kéfir" value="${esc(p?.name??'')}" maxlength="80" required>`)}
-    <div class="form-pair">${field('Cantidad que tengo ahora',numberField('quantity',p?.quantity??1,'0'))}${field('Unidad',`<select name="unit">${optUnits(p?.unit??'ud')}</select>`)}</div>
+    <div class="form-pair">${field('Cantidad que tengo ahora',quantityInput)}${field('Unidad',`<select name="unit">${optUnits(p?.unit??'ud')}</select>`)}</div>
     <label class="habitual-toggle"><input type="checkbox" name="habitual" ${habitual?'checked':''}><span><b>Lo compro habitualmente</b><small>Que aparezca automáticamente cuando me quede poco.</small></span></label>
     <details class="pantry-advanced"><summary>Reposición automática (opcional)</summary><div class="form-pair">${field('Avisar por debajo de',numberField('minStock',p?.minStock??1,'0'))}${field('Cantidad objetivo',numberField('restockQuantity',p?.restockQuantity??Math.max(p?.quantity??1,1),'0.01'))}</div></details>
     <p class="pantry-form-error" role="alert" aria-live="polite" hidden></p><button class="btn btn-primary btn-wide" type="button" data-action="save-pantry">${icon('save',18)} Guardar producto</button></form>`);
 }
+function purchaseRatingSelect(value?: number): string {
+  const ratings = ['Mala', 'Regular', 'Aceptable', 'Buena', 'Excelente'];
+  const options = ratings.map((label, index) => {
+    const rating = index + 1;
+    return `<option value="${rating}"${value === rating ? ' selected' : ''}>${rating}/5 · ${label}</option>`;
+  });
+  return `<select name="quality"><option value="">Sin valorar</option>${options.join('')}</select>`;
+}
+function openStoreComparison(product?: string): void {
+  showModal(modalHeading('Comparar supermercados') + shopComparison(state, product));
+}
+function openStoreRating(id: string): void {
+  const entry = state.purchases?.find(item => item.id === id);
+  if (!entry) throw Error('La compra ya no está en el historial.');
+  showModal(modalHeading('Valorar compra', `${entry.product} · ${entry.store} · ${entry.date}`) + `
+    <form id="form-store-rating" class="form-grid">
+      <input type="hidden" name="purchaseId" value="${esc(entry.id)}">
+      ${field('Cuánto te gustó', purchaseRatingSelect(entry.quality))}
+      ${field('Comentario (opcional)', `<textarea name="note" rows="3" maxlength="350">${esc(entry.note ?? '')}</textarea>`)}
+      <button type="submit" class="btn btn-primary">Guardar valoración</button>
+      <button type="button" class="btn btn-secondary" data-action="open-store-comparison" data-product="${esc(entry.product)}">Volver a la comparación</button>
+    </form>`);
+}
 function openPurchase(id?:string, pantryItem?: { product: string; quantity?: number; unit?: Unit }):void{
   const entry=(state.purchases??[]).find(x=>x.id===id);
   const stores=[...new Set((state.purchases??[]).map(x=>x.store))];
+  const unknownQuantity = entry !== undefined && entry.quantity === undefined;
+  const quantityInput = unknownQuantity
+    ? '<input name="quantity" type="number" step="any" min="0.01" placeholder="Sin indicar">'
+    : numberField('quantity', entry?.quantity ?? pantryItem?.quantity ?? 1, '0.01');
   showModal(modalHeading(entry?'Editar compra':'Registrar compra','Apunta qué compraste, dónde y qué te pareció. No hace falta tener un ticket.') +
     '<form id="form-purchase" class="form-grid" novalidate autocomplete="off">' +
     '<input name="entryId" type="hidden" value="'+esc(entry?.id??'')+'">' +
     field('Producto · usa siempre el mismo nombre para compararlo','<input name="product" required maxlength="80" placeholder="Ej. Pechuga de pollo" value="'+esc(entry?.product??pantryItem?.product??'')+'">') +
     field('Supermercado','<input name="store" required maxlength="80" list="known-stores" placeholder="Ej. Mercadona" value="'+esc(entry?.store??'')+'"><datalist id="known-stores">'+stores.map(x=>'<option value="'+esc(x)+'"></option>').join('')+'</datalist>') +
     field('Fecha','<input type="date" name="date" required value="'+esc(entry?.date??localDate())+'">') +
-    '<div class="form-pair">'+field('Cantidad',numberField('quantity',entry?.quantity??pantryItem?.quantity??1,'0.01'))+field('Unidad','<select name="unit">'+optUnits(entry?.unit??pantryItem?.unit??'kg')+'</select>')+'</div>' +
+    '<div class="form-pair">'+field('Cantidad',quantityInput)+field('Unidad','<select name="unit">'+optUnits(entry?.unit??pantryItem?.unit??'kg')+'</select>')+'</div>' +
     field('Precio total pagado (€) · opcional','<input name="totalPrice" type="number" min="0.01" step="any" inputmode="decimal" placeholder="Ej. 4,70" value="'+esc(entry?.totalPrice??'')+'">') +
-    field('Calidad para ti (opcional)','<select name="quality"><option value="">Sin valorar</option>'+[1,2,3,4,5].map(i=>'<option value="'+i+'" '+(entry?.quality===i?'selected':'')+'>'+i+'/5'+(i===5?' · Excelente':i===1?' · Mala':'')+'</option>').join('')+'</select>') +
+    field('Calidad para ti (opcional)',purchaseRatingSelect(entry?.quality)) +
     field('Tu experiencia (opcional)','<textarea name="note" maxlength="350" rows="3" placeholder="Ej. Más jugoso; repetiría">'+esc(entry?.note??'')+'</textarea>') +
     (entry?'':'<label class="habitual-toggle"><input type="checkbox" name="addStock"'+(pantryItem?' checked':'')+'><span><b>También sumarlo a mi despensa</b><small>Desmárcalo si estás registrando una compra antigua o de prueba.</small></span></label>') +
     '<p class="purchase-error" role="alert" aria-live="polite" hidden></p>' +
@@ -128,11 +159,13 @@ async function savePurchase():Promise<void>{
   if(!form)throw Error('No se encontró el formulario de compra.');
   const fd=new FormData(form),str=(k:string)=>String(fd.get(k)??'').trim();
   const parseOptional=(k:string)=>{const v=str(k);return v===''?undefined:Number(v.replace(',','.'));};
-  const entry:PurchaseRecord={id:str('entryId')||uid(),date:str('date'),product:str('product'),store:str('store'),
-    quantity:Number(str('quantity').replace(',','.')),unit:str('unit') as Unit,totalPrice:parseOptional('totalPrice'),
-    quality:parseOptional('quality'),note:str('note')};
+  const id = str('entryId') || uid();
+  const previous = (state.purchases ?? []).find(item => item.id === id);
+  const quantity = str('quantity');
+  const entry:PurchaseRecord={id,date:str('date'),product:str('product'),store:str('store'),
+    quantity:previous && previous.quantity === undefined && !quantity ? undefined : Number(quantity.replace(',','.')),
+    unit:str('unit') as Unit,totalPrice:parseOptional('totalPrice'),quality:parseOptional('quality'),note:str('note')};
   // Validar en una copia temporal antes de modificar el historial real.
-  const previous=(state.purchases??[]).find(x=>x.id===entry.id);
   const temp:AppData={...state,purchases:[],pantry:[],groceries:[]};
   registerPurchase(temp,entry,false);
   if(previous){
@@ -141,41 +174,71 @@ async function savePurchase():Promise<void>{
   closeModal();await commit(previous?'Compra actualizada':'Compra y valoración guardadas');
 }
 let lastAssistantReply='';
+function showAssistantReply(message: string): void {
+  lastAssistantReply = message;
+  const panel = root.querySelector<HTMLElement>('#assistant-answer');
+  if (panel) {
+    panel.textContent = message;
+    panel.hidden = !message;
+  }
+}
 let activeSpeech:BrowserRecognizer|null=null;
 function showAssistantReview(message:string,storeOverride?:string):void{
-  const plan=parseVoicePlan(state,message);
-  if(storeOverride!==undefined)plan.store=storeOverride||undefined;
-  const rows=plan.items.map(item=>{
-    const c=item.command;
-    const action=c.action==='bought'?'Compra':c.action==='set'?'En casa':c.action==='consume'?'Consumir':c.action==='list'?'Lista':c.action==='out'?'Agotado':'Eliminar';
-    const detail='quantity' in c?c.quantity+' '+(c.unit??'ud'):'';
-    return '<div class="voice-review-row"><b>'+esc(action)+'</b><span>'+esc(c.name)+'</span><small>'+esc(detail)+'</small><strong>'+ (item.totalPrice===undefined?'':esc(item.totalPrice.toFixed(2)+' €'))+'</strong></div>';
+  const plan = parseVoicePlan(state, message);
+  if (storeOverride !== undefined) plan.store = storeOverride || undefined;
+  const labels: Record<VoicePlan['items'][number]['command']['action'], string> = {
+    bought:'Compra', set:'En casa', consume:'Consumir', list:'Lista', out:'Agotado', remove:'Eliminar',
+  };
+  const rows = plan.items.map(item => {
+    const command = item.command;
+    const isPurchase = command.action === 'bought';
+    const detail = item.quantityUnknown ? item.label : 'quantity' in command ? `${command.quantity} ${command.unit ?? 'ud'}` : '';
+    return `<fieldset class="voice-review-row${isPurchase ? ' voice-review-purchase' : ''}" data-voice-row>
+      <legend>${labels[command.action]}${detail ? ` · ${esc(detail)}` : ''}</legend>
+      ${field('Producto', `<input data-voice-product maxlength="80" value="${esc(command.name)}">`)}
+      ${isPurchase ? field('Precio total (€)', `<input data-voice-price inputmode="decimal" maxlength="12" value="${item.totalPrice?.toFixed(2).replace('.', ',') ?? ''}" placeholder="Opcional">`) : ''}
+    </fieldset>`;
   }).join('');
-  showModal(modalHeading('Revisar lo que has dicho','Comprueba los productos antes de registrarlos.')+
-    '<div class="form-grid">'+
-    field('Texto reconocido · puedes corregirlo','<textarea id="assistant-review-text" rows="4" maxlength="1600">'+esc(message)+'</textarea>')+
-    field('Supermercado para las compras · opcional si no indicas precios','<input id="assistant-review-store" maxlength="80" value="'+esc(plan.store??'')+'" placeholder="Ej. Mercadona">')+
-    '<div class="voice-review-list">'+(rows||'<p class="note">Solo se ha indicado el supermercado.</p>')+'</div>'+
-    '<p class="note">Los artículos sin precio no se suman al gasto. No se guardará nada hasta confirmar.</p>'+
-    '<button type="button" class="btn btn-secondary btn-wide" data-action="assistant-review-update">Volver a interpretar</button>'+
-    '<button type="button" class="btn btn-primary btn-wide" data-action="assistant-review-save">Confirmar cambios</button></div>');
-  const list=modalRoot.querySelector<HTMLElement>('.voice-review-list');
-  if(list){list.dataset.reviewedText=message;list.dataset.reviewedStore=plan.store??'';}
+  showModal(modalHeading('Revisar el dictado','Comprueba los productos y precios antes de guardar.')+`
+    <div class="form-grid">
+      ${field('Supermercado', `<input id="assistant-review-store" maxlength="80" value="${esc(plan.store ?? '')}" placeholder="Ej. Aldi">`)}
+      <div class="voice-review-list">${rows || '<p class="note">Solo se ha indicado el supermercado.</p>'}</div>
+      <details class="pantry-advanced voice-review-transcript"><summary>Ver o corregir el texto reconocido</summary>
+        ${field('Texto reconocido', `<textarea id="assistant-review-text" rows="4" maxlength="1600">${esc(message)}</textarea>`)}
+        <button type="button" class="btn btn-secondary btn-wide" data-action="assistant-review-update">Volver a interpretar</button>
+      </details>
+      <button type="button" class="btn btn-primary" data-action="assistant-review-save">Confirmar cambios</button>
+    </div>`);
+  const list = modalRoot.querySelector<HTMLElement>('.voice-review-list');
+  if (list) {
+    list.dataset.reviewedText = message;
+    list.dataset.reviewedStore = plan.store ?? '';
+  }
 }
+
 async function saveAssistantReview():Promise<void>{
-  const text=modalRoot.querySelector<HTMLTextAreaElement>('#assistant-review-text')?.value??'';
-  const typedStore=modalRoot.querySelector<HTMLInputElement>('#assistant-review-store')?.value.trim()??'';
-  const list=modalRoot.querySelector<HTMLElement>('.voice-review-list');
-  if(!list)throw Error('Vuelve a abrir la revisión.');
-  if(list.dataset.reviewedText!==text || list.dataset.reviewedStore!==typedStore){
-    showAssistantReview(text,typedStore);
-    toast('Revisa la propuesta actualizada y confirma de nuevo.');
+  const text = modalRoot.querySelector<HTMLTextAreaElement>('#assistant-review-text')?.value ?? '';
+  const typedStore = modalRoot.querySelector<HTMLInputElement>('#assistant-review-store')?.value.trim() ?? '';
+  const list = modalRoot.querySelector<HTMLElement>('.voice-review-list');
+  if (!list) throw Error('Vuelve a abrir la revisión.');
+  if (list.dataset.reviewedText !== text) {
+    showAssistantReview(text, typedStore === list.dataset.reviewedStore ? undefined : typedStore);
+    toast('Revisa los productos interpretados y confirma de nuevo.');
     return;
   }
-  const fresh=parseVoicePlan(state,text);
-  fresh.store=typedStore||undefined;
-  const summary=applyVoicePlan(state,fresh);
-  lastAssistantReply=summary;
+  const plan = parseVoicePlan(state, text);
+  plan.store = typedStore || undefined;
+  const rows = list.querySelectorAll<HTMLElement>('[data-voice-row]');
+  if (rows.length !== plan.items.length) throw Error('Vuelve a interpretar el dictado.');
+  plan.items.forEach((item, index) => {
+    const name = rows[index].querySelector<HTMLInputElement>('[data-voice-product]')?.value.trim() ?? '';
+    if (!name || name.length > 80) throw Error(`Indica el producto de la fila ${index + 1}.`);
+    item.command.name = name;
+    const amount = rows[index].querySelector<HTMLInputElement>('[data-voice-price]')?.value.trim() ?? '';
+    if (amount && !/^\d+(?:[.,]\d{1,2})?$/.test(amount)) throw Error(`Revisa el precio de ${name}.`);
+    item.totalPrice = amount ? Number(amount.replace(',', '.')) : undefined;
+  });
+  lastAssistantReply = applyVoicePlan(state, plan);
   closeModal();
   await commit('Cambios guardados');
 }
@@ -198,9 +261,11 @@ function startVoiceQuestion():void{
       if(phrase)heard.push(phrase);
     }
     if(heard.length){
-      input.value=[input.value.trim(),...heard].filter(Boolean).join('; ').slice(0,1600);
+      const phrases = [input.value.trim(), ...heard].filter(Boolean);
+      const continuousPurchase = /^(?:compra|ticket|he comprado|compr[eé])(?:\s|$)/iu.test(phrases[0] ?? '');
+      input.value = phrases.join(continuousPurchase ? ' ' : '; ').slice(0,1600);
       const panel=root.querySelector<HTMLElement>('#assistant-answer');
-      if(panel){panel.textContent='Dictado: '+input.value+'. Revisa y pulsa Enviar para continuar.';panel.hidden=false;}
+      if(panel){panel.textContent='Dictado: '+input.value+'. Pulsa Continuar para revisar o consultar.';panel.hidden=false;}
     }
   };
   recognizer.onerror=e=>toast('Error de micrófono: '+e.error,true);
@@ -365,7 +430,8 @@ function openRecipe(id?:string):void{
   const recipe=state.recipes.find(r=>r.id===id);
   showModal(`${modalHeading(recipe?'Editar receta':'Guardar receta','Introduce un ingrediente por línea, separando nombre, cantidad y unidad con |.')}
     <form id="form-recipe" class="form-grid"><input type="hidden" name="id" value="${esc(recipe?.id??'')}">
-    ${field('Nombre del plato',`<input name="name" value="${esc(recipe?.name??'')}" placeholder="Ej. Arroz con ternera" maxlength="100" required>`)}
+    ${field('Nombre de la receta',`<input name="name" value="${esc(recipe?.name??'')}" placeholder="Ej. Batido de plátano" maxlength="100" required>`)}
+    ${field('Tipo de receta',`<select name="frequency"><option value="occasional">Puntual</option><option value="habitual"${recipe?.habitual === true ? ' selected' : ''}>Habitual</option></select><small>Las habituales muestran los ingredientes que faltan en Recetas.</small>`)}
     ${field('Raciones de la receta',numberField('servings',recipe?.servings??2,'1'))}
     ${field('Ingredientes (nombre | cantidad | unidad)',`<textarea name="ingredients" rows="6" required placeholder="Pollo | 300 | g&#10;Arroz | 140 | g&#10;Huevos | 2 | ud">${esc(recipe?ingredientLines(recipe.ingredients):'')}</textarea>`)}
     ${field('Cómo lo preparas',`<textarea name="method" rows="4" placeholder="Pasos rápidos...">${esc(recipe?.method??'')}</textarea>`)}
@@ -416,6 +482,8 @@ async function act(action:string,el:HTMLElement):Promise<void>{
     case 'go':current=(TABS.find(t=>t.id===el.dataset.tab)?.id??'home');closeModal();render(true);break;
     case 'toggle-mission':{if(!missions.some(x=>x.id===id))return;toggleMission(state,localDate(),id);await commit('Progreso actualizado');break;}
     case 'new-pantry':openPantry();break;
+    case 'open-store-comparison':openStoreComparison(el.dataset.product);break;
+    case 'rate-store-purchase':openStoreRating(id);break;
     case 'new-purchase':{
       if(el.dataset.stock !== 'true'){openPurchase();break;}
       openPurchase(undefined, {
@@ -445,7 +513,8 @@ async function act(action:string,el:HTMLElement):Promise<void>{
     case 'assistant-review-update':{
       const text=modalRoot.querySelector<HTMLTextAreaElement>('#assistant-review-text')?.value??'';
       const store=modalRoot.querySelector<HTMLInputElement>('#assistant-review-store')?.value.trim()??'';
-      showAssistantReview(text,store);
+      const initialStore = modalRoot.querySelector<HTMLElement>('.voice-review-list')?.dataset.reviewedStore;
+      showAssistantReview(text, store === initialStore ? undefined : store);
       break;
     }
     case 'assistant-review-save':await saveAssistantReview();break;
@@ -506,9 +575,13 @@ async function act(action:string,el:HTMLElement):Promise<void>{
       removeFromPantry(state,id);
       await commit('Producto eliminado');break;
     }
+    case 'pantry-low':{
+      const name = markStockLow(state, id);
+      await commit('Queda poco: ' + name);break;
+    }
     case 'deplete-pantry':{
       const p=state.pantry.find(x=>x.id===id);if(!p)return;
-      markOut(state,p.name);await commit('Agotado: '+p.name);break;
+      markOut(state,p.name,p.id);await commit('Añadido a la lista: '+p.name);break;
     }
     case 'new-grocery':openGrocery();break;
     case 'delete-grocery':state.groceries=state.groceries.filter(g=>g.id!==id);await commit('Apunte eliminado');break;
@@ -569,12 +642,14 @@ async function submit(form:HTMLFormElement):Promise<void> {
       const restockQuantity=restockRaw===''?Math.max(1,qty):Number(restockRaw.replace(',','.'));
       if(!name)throw Error('Escribe el nombre del producto antes de guardar.');
       if(name.length>80)throw Error('El nombre no puede superar los 80 caracteres.');
-      if(qtyText===''||!Number.isFinite(qty)||qty<0)throw Error('Indica una cantidad válida, igual o superior a cero.');
+      const previous=state.pantry.find(x=>x.id===id);
+      const keepStockStatus = !qtyText && previous?.stockStatus && previous.quantity === 0;
+      if((!qtyText && !keepStockStatus)||!Number.isFinite(qty)||qty<0)throw Error('Indica una cantidad válida, igual o superior a cero.');
       if(!['g','kg','ud','ml','l'].includes(unit))throw Error('Selecciona una unidad válida.');
       if(!Number.isFinite(minStock)||minStock<0||minStock>100000)throw Error('Revisa el mínimo para avisarte (puede ser cero).');
       if(!Number.isFinite(restockQuantity)||restockQuantity<=0||restockQuantity>100000)throw Error('La cantidad que quieres tener debe ser mayor que cero.');
-      const previous=state.pantry.find(x=>x.id===id);
       if(previous){previous.name=name;previous.quantity=qty;previous.unit=unit;previous.updatedAt=new Date().toISOString();
+        if(!keepStockStatus) delete previous.stockStatus;
         previous.habitual=habitual;previous.minStock=minStock;previous.restockQuantity=restockQuantity;}
       else {
         addToPantry(state,name,qty,unit);
@@ -589,7 +664,31 @@ async function submit(form:HTMLFormElement):Promise<void> {
     }
     case 'form-assistant':{
       if(activeSpeech){activeSpeech.stop();activeSpeech=null;}
-      showAssistantReview(str('message'));break;
+      const message = str('message');
+      if (isBuyingAdviceQuestion(message)) {
+        const advice = askBuyingAdvice(state, message);
+        if (advice.product) {
+          showAssistantReply('');
+          current = 'expenses';
+          render(true);
+          openStoreComparison(advice.product);
+        } else showAssistantReply(advice.answer);
+        break;
+      }
+      showAssistantReview(message);break;
+    }
+    case 'form-store-comparison':openStoreComparison(str('product'));break;
+    case 'form-store-rating':{
+      const purchaseId = str('purchaseId');
+      const entry = state.purchases?.find(item => item.id === purchaseId);
+      if (!entry) throw Error('La compra ya no está en el historial.');
+      const validated = { ...state, purchases: [] as PurchaseRecord[] };
+      registerPurchase(validated, { ...entry, quality: str('quality') ? num('quality') : undefined, note: str('note') }, false);
+      state.purchases = (state.purchases ?? []).map(item => item.id === purchaseId ? validated.purchases[0] : item);
+      closeModal();
+      await commit('Valoración guardada');
+      openStoreComparison(entry.product);
+      break;
     }
     case 'form-grocery':{
       const name=str('productName'),qty=num('quantity'),unit=str('unit') as Unit;
@@ -600,11 +699,12 @@ async function submit(form:HTMLFormElement):Promise<void> {
     }
     case 'form-recipe':{
       const name=str('name'),servings=num('servings'),id=str('id'),ingredients=parseIngredients(str('ingredients'));
+      const habitual = str('frequency') === 'habitual';
       if(!name||name.length>100||!Number.isInteger(servings)||servings<1||servings>100)throw Error('Revisa nombre y raciones.');
       const prior=state.recipes.find(r=>r.id===id);
       let photo=prior?.photo;
       const file=fd.get('photo');if(file instanceof File && file.size>0)photo=await shrinkPhoto(file);
-      const recipe:Recipe={id:prior?.id??uid(),name,servings,ingredients,method:str('method'),photo,isExample:false};
+      const recipe:Recipe={id:prior?.id??uid(),name,servings,ingredients,method:str('method'),photo,isExample:false,habitual};
       if(prior)Object.assign(prior,recipe);else state.recipes.push(recipe);
       closeModal();await commit('Receta guardada');break;
     }

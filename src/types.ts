@@ -7,15 +7,16 @@ export interface Ingredient { name: string; quantity: number; unit: Unit }
 export interface PantryItem {
   id: string; name: string; quantity: number; unit: Unit; updatedAt: string;
   habitual?: boolean; minStock?: number; restockQuantity?: number;
+  stockStatus?: 'available' | 'low';
 }
 export interface Recipe {
   id: string; name: string; servings: number; ingredients: Ingredient[];
-  method: string; photo?: string; isExample?: boolean
+  method: string; photo?: string; isExample?: boolean; habitual?: boolean;
 }
 export interface PreparedMeal { id: string; recipeId: string; servings: number; location: 'nevera'|'congelador'; date: string }
 export interface PlannedMeal { id: string; date: string; kind: MealKind; recipeId: string; servings: number }
 export interface GroceryItem { id: string; name: string; quantity: number; unit: Unit }
-export interface PurchaseRecord {id:string;date:string;product:string;store:string;quantity:number;unit:Unit;label?:string;totalPrice?:number;quality?:number;note?:string;receiptId?:string}
+export interface PurchaseRecord {id:string;date:string;product:string;store:string;quantity?:number;unit:Unit;label?:string;totalPrice?:number;quality?:number;note?:string;receiptId?:string}
 export interface ReceiptRecord {
   id:string; capturedAt:string; date:string; store:string; status:'pending'|'imported';
   ocrText:string; reviewedText:string; purchaseIds:string[]; photoBytes:number;

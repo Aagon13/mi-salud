@@ -1,6 +1,6 @@
 import type { PurchaseRecord } from '../types.js';
 import { unitPrice } from './buyingAdvice.js';
-import { joinKey, toBase, unitGroup } from './helpers.js';
+import { joinKey, productKey, toBase, unitGroup } from './helpers.js';
 import type { ShoppingItem } from './shopping.js';
 
 const priceUnits = {g: 'kg', ml: 'l', ud: 'ud'} as const;
@@ -29,6 +29,22 @@ export function latestPantryPrices(purchases: readonly PurchaseRecord[]): Map<st
       store: purchase.store,
       date: purchase.date,
     });
+  }
+  return prices;
+}
+
+export type UnmeasuredPantryPrice = Pick<PantryPrice, 'amount' | 'store' | 'date'>;
+
+export function latestUnmeasuredPrices(purchases: readonly PurchaseRecord[]): Map<string, UnmeasuredPantryPrice> {
+  const prices = new Map<string, UnmeasuredPantryPrice>();
+  for (const purchase of purchases) {
+    const amount = purchase.totalPrice;
+    if (purchase.quantity !== undefined || amount === undefined || !Number.isFinite(amount) || amount <= 0) continue;
+
+    const key = productKey(purchase.product);
+    const current = prices.get(key);
+    if (current && current.date > purchase.date) continue;
+    prices.set(key, {amount, store: purchase.store, date: purchase.date});
   }
   return prices;
 }
